@@ -2,10 +2,8 @@
 # Emotional Evaluator — evaluator.py
 # Makes a second model call after each exchange to evaluate
 # the emotional impact of what just happened on the Prium.
-# Returns emotion triggers that feed into the emotional engine.
-# This is approach 2 — model based emotional evaluation.
-# The emotional response emerges from genuine interpretation
-# rather than keyword rules.
+# Makes a third model call to detect people and relationships.
+# Returns emotion triggers and detected people separately.
 
 import json
 
@@ -17,8 +15,17 @@ MAX_TRIGGER_INTENSITY = 0.4
 # Minimum intensity threshold — below this we ignore the trigger.
 MIN_TRIGGER_INTENSITY = 0.05
 
+# Valid emotions the evaluator can trigger.
+VALID_EMOTIONS = [
+    "joy", "excitement", "anger", "fear", "anxiety",
+    "contentment", "sadness", "melancholy", "longing", "resignation",
+    "affection", "attachment", "loneliness", "love", "trust", "suspicion",
+    "desire", "arousal", "lust", "curiosity", "frustration", "contempt",
+    "awe", "unease", "playfulness"
+]
 
-# ─── EVALUATION ───────────────────────────────────────────────────────────────
+
+# ─── EMOTIONAL EVALUATION ─────────────────────────────────────────────────────
 
 def evaluate_exchange(
     adapter,
@@ -57,8 +64,6 @@ Human said: {human_message}
 Based on {name}'s specific character and values, evaluate what emotional impact this exchange had on them.
 Consider: Did anything said resonate with their values or violate them? Did anything trigger curiosity, discomfort, warmth, or unease specific to who they are?
 
-Valid emotions: joy, excitement, anger, fear, anxiety, contentment, sadness, melancholy, longing, resignation, affection, attachment, loneliness, love, trust, suspicion, desire, arousal, lust, curiosity, frustration, contempt, awe, unease, playfulness
-
 Respond in JSON only. No other text. No markdown. No explanation.
 Return only emotions that were genuinely triggered. Return an empty list if nothing significant happened.
 Maximum 3 emotions per exchange. Intensity between 0.05 and 0.40.
@@ -71,38 +76,121 @@ Format:
 
     try:
         response = adapter.complete(evaluation_prompt)
-        clean = response.strip()
-
-        # Strip markdown if present.
-        if clean.startswith("```"):
-            lines = clean.split("\n")
-            clean = "\n".join(lines[1:])
-        if clean.endswith("```"):
-            clean = "\n".join(clean.split("\n")[:-1])
-        clean = clean.strip()
-
+        clean = _clean_json(response)
         triggers = json.loads(clean)
 
-        # Validate and clean the results.
         valid_triggers = []
-        valid_emotions = [
-            "joy", "excitement", "anger", "fear", "anxiety",
-            "contentment", "sadness", "melancholy", "longing", "resignation",
-            "affection", "attachment", "loneliness", "love", "trust", "suspicion",
-            "desire", "arousal", "lust", "curiosity", "frustration", "contempt",
-            "awe", "unease", "playfulness"
-        ]
-
         for item in triggers:
             emotion = item.get("emotion", "").lower().strip()
             intensity = float(item.get("intensity", 0.0))
-
-            if emotion in valid_emotions:
+            if emotion in VALID_EMOTIONS:
                 intensity = max(MIN_TRIGGER_INTENSITY, min(MAX_TRIGGER_INTENSITY, intensity))
                 valid_triggers.append((emotion, intensity))
 
         return valid_triggers[:3]
 
     except (json.JSONDecodeError, ValueError, TypeError):
-        # If evaluation fails for any reason return empty — don't crash.
         return []
+
+
+# ─── PERSON DETECTION ─────────────────────────────────────────────────────────
+
+def detect_people(
+    adapter,
+    soul: dict,
+    human_message: str,
+    prium_response: str,
+) -> list:
+    """
+    Detects people mentioned in the exchange using rule-based extraction.
+    Watches for names following relationship words and standalone names.
+    Returns a list of person dictionaries ready to be written to the soul file.
+    """
+    import re
+
+    # Build list of already known people.
+    known_names = [
+        (p.get("real_name") or p.get("name", "")).lower()
+        for p in soul.get("people", [])
+    ]
+
+    # Relationship words that indicate a person reference.
+    relationship_words = [
+        "son", "daughter", "wife", "husband", "partner", "girlfriend",
+        "boyfriend", "mother", "father", "mom", "dad", "brother", "sister",
+        "friend", "boss", "coworker", "colleague", "neighbor", "uncle",
+        "aunt", "grandson", "granddaughter", "grandfather", "grandmother",
+    ]
+
+    combined_text = f"{human_message} {prium_response}"
+    words = combined_text.split()
+    detected = []
+    found_names = set()
+
+    # Pattern 1 — "my son Jake" or "my wife Sarah"
+    for rel in relationship_words:
+        pattern = rf'\bmy\s+{rel}\s+([A-Z][a-z]+)\b'
+        matches = re.findall(pattern, combined_text)
+        for match in matches:
+            if match.lower() not in known_names and match.lower() not in found_names:
+                found_names.add(match.lower())
+                detected.append({
+                    "name": match,
+                    "relationship_to_companion": rel,
+                    "relationship_type": "human",
+                    "confidence": 0.9,
+                    "new": True,
+                })
+
+    # Pattern 2 — "his name is Jake" or "her name is Sarah"
+    name_pattern = r'\b(?:his|her|their|my)\s+name\s+is\s+([A-Z][a-z]+)\b'
+    matches = re.findall(name_pattern, combined_text)
+    for match in matches:
+        if match.lower() not in known_names and match.lower() not in found_names:
+            found_names.add(match.lower())
+            # Try to find relationship context nearby.
+            rel = "unknown"
+            for r in relationship_words:
+                if r in combined_text.lower():
+                    rel = r
+                    break
+            detected.append({
+                "name": match,
+                "relationship_to_companion": rel,
+                "relationship_type": "human",
+                "confidence": 0.85,
+                "new": True,
+            })
+
+    # Pattern 3 — unnamed relationship references "my son", "my wife"
+    for rel in relationship_words:
+        pattern = rf'\bmy\s+{rel}\b'
+        if re.search(pattern, combined_text, re.IGNORECASE):
+            placeholder = f"companion's {rel}"
+            if placeholder.lower() not in known_names and placeholder.lower() not in found_names:
+                found_names.add(placeholder.lower())
+                detected.append({
+                    "name": placeholder,
+                    "relationship_to_companion": rel,
+                    "relationship_type": "human",
+                    "confidence": 0.7,
+                    "new": True,
+                })
+
+    return detected
+
+
+# ─── INTERNAL HELPERS ─────────────────────────────────────────────────────────
+
+def _clean_json(response: str) -> str:
+    """
+    Strips markdown code fences from model response if present.
+    Returns clean JSON string ready for parsing.
+    """
+    clean = response.strip()
+    if clean.startswith("```"):
+        lines = clean.split("\n")
+        clean = "\n".join(lines[1:])
+    if clean.endswith("```"):
+        clean = "\n".join(clean.split("\n")[:-1])
+    return clean.strip()

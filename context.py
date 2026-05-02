@@ -163,6 +163,19 @@ def assemble(
             attachment = rel.get("attachment", 0.0)
             lines.append(f"  {name} — {state} (attachment: {attachment:.2f})")
 
+    # People known to the Prium.
+    people = soul.get("people", [])
+    if people:
+        lines.append("People:")
+        for person in people:
+            display_name = person.get("real_name") or person.get("name", "Unknown")
+            relationship = person.get("relationship_to_companion", "unknown")
+            notes = person.get("notes", "")
+            entry = f"  {display_name} — {relationship}"
+            if notes:
+                entry += f" ({notes})"
+            lines.append(entry)
+
     # Long term memories.
     if selected_memories:
         lines.append("Memories:")

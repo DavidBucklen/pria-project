@@ -16,6 +16,7 @@ from soul_file.soul import (
     log_session_start,
     log_session_end,
     write_memory,
+    write_person,
 )
 from emotional_engine.engine import (
     empty_state,
@@ -25,7 +26,7 @@ from emotional_engine.engine import (
     state_to_snapshot,
     load_from_snapshot,
 )
-from emotional_engine.evaluator import evaluate_exchange
+from emotional_engine.evaluator import evaluate_exchange, detect_people
 from memory_filter.filter import filter_buffer
 from memory_filter.retrieval import select_memories
 from context import assemble, build_system_prompt, create_buffer, add_to_buffer, _extract_sensory_cues, _extract_topic_cues
@@ -36,7 +37,7 @@ from adapters.ollama import OllamaAdapter
 SOUL_FILE_PATH = "soul.json"
 MODEL_NAME = "dolphin3:latest"
 OLLAMA_HOST = "http://localhost:11434"
-DEBUG_MODE = False
+DEBUG_MODE = True
 CONTEXT_WINDOW_LIMIT = 4096  # estimated tokens before auto-refresh
 CHARS_PER_TOKEN = 4  # rough approximation
 
@@ -426,6 +427,27 @@ if __name__ == "__main__":
 
             if DEBUG_MODE:
                 print(f"[EVALUATOR] Triggers: {emotion_triggers}")
+
+            # Detect people mentioned in this exchange.
+            detected_people = detect_people(
+                adapter=adapter,
+                soul=soul,
+                human_message=user_input,
+                prium_response=response,
+            )
+            if DEBUG_MODE:
+                print(f"[PEOPLE DEBUG] detect_people returned: {detected_people}")
+
+            # Write any newly detected people to soul file.
+            for person in detected_people:
+                write_person(
+                    soul=soul,
+                    name=person["name"],
+                    relationship_to_companion=person["relationship_to_companion"],
+                    relationship_type=person["relationship_type"],
+                )
+                if DEBUG_MODE:
+                    print(f"[PEOPLE] Detected: {person['name']} — {person['relationship_to_companion']}")
 
             # Record session event with real emotional intensity.
             sensory_tags = _extract_sensory_cues(user_input) + _extract_sensory_cues(response)

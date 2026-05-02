@@ -38,6 +38,7 @@ def empty_soul(name: str, model: str, origin_description: str, core_traits: list
         },
         "relationships": [],
         "long_term_memories": [],
+        "people": [],
         "opinions": [],
         "skills": [],
         "session_log": [],
@@ -187,11 +188,11 @@ def write_memory(
     """
     Writes a memory that passed the filter threshold to long-term storage.
 
-    sharpness       — clarity of the memory, set from override strength at time of event
+    sharpness         — clarity of the memory, set from override strength at time of event
     emotional_context — primary emotion, secondary emotion, override strength at formation
-    sensory_tags    — sensory and contextual elements present during the event
-    topic_tags      — semantic topic categories for associative retrieval
-    triggers        — starts empty, updated each time this memory is retrieved
+    sensory_tags      — sensory and contextual elements present during the event
+    topic_tags        — semantic topic categories for associative retrieval
+    triggers          — starts empty, updated each time this memory is retrieved
     """
     soul["long_term_memories"].append({
         "description": description,
@@ -207,4 +208,47 @@ def write_memory(
         "triggers": [],
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "immediate_write": immediate,
+    })
+
+
+# ─── PEOPLE WRITING ───────────────────────────────────────────────────────────
+
+def write_person(
+    soul: dict,
+    name: str,
+    real_name: str = None,
+    relationship_to_companion: str = "unknown",
+    relationship_type: str = "human",
+    notes: str = "",
+):
+    """
+    Writes a new person entry to the soul file people list.
+    Called when a new person is detected in conversation.
+    If a person with the same name already exists, updates their entry.
+    """
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Check if person already exists and update.
+    for person in soul.get("people", []):
+        if person.get("name", "").lower() == name.lower():
+            person["last_mentioned"] = now
+            if real_name and not person.get("real_name"):
+                person["real_name"] = real_name
+            if notes:
+                person["notes"] = notes
+            return
+
+    # Create new entry.
+    soul.setdefault("people", []).append({
+        "name": name,
+        "real_name": real_name,
+        "relationship_to_companion": relationship_to_companion,
+        "relationship_type": relationship_type,
+        "first_encountered": now,
+        "last_mentioned": now,
+        "emotional_association": {
+            "primary": None,
+            "strength": 0.0,
+        },
+        "notes": notes,
     })
