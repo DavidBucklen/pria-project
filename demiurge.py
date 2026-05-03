@@ -363,6 +363,25 @@ if __name__ == "__main__":
             if user_input.strip() == "/refresh":
                 buffer, session_events = refresh_context(soul, emotional_state, buffer, session_events)
                 continue
+            if user_input.strip().startswith("/attach"):
+                parts = user_input.strip().split(" ", 1)
+                if len(parts) < 2:
+                    print("Usage: /attach <file path>")
+                    continue
+                file_path = parts[1].strip()
+                print(f"File attached: {file_path}")
+                print("Now type your message about this file and press Enter.")
+                user_message = input("You: ").strip()
+                if not user_message:
+                    continue
+                try:
+                    response = adapter.complete_with_file(user_message, file_path)
+                    print(f"\n{name}: {response}\n")
+                    add_to_buffer(buffer, f"You: {user_message} [attached: {file_path}]")
+                    add_to_buffer(buffer, f"{name}: {response}")
+                except (FileNotFoundError, ValueError, ImportError) as e:
+                    print(f"Attachment error: {e}")
+                continue
             if not user_input:
                 continue
 
@@ -435,8 +454,7 @@ if __name__ == "__main__":
                 human_message=user_input,
                 prium_response=response,
             )
-            if DEBUG_MODE:
-                print(f"[PEOPLE DEBUG] detect_people returned: {detected_people}")
+            
 
             # Write any newly detected people to soul file.
             for person in detected_people:
