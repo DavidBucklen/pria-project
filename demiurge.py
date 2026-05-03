@@ -29,7 +29,7 @@ from emotional_engine.engine import (
     get_tiredness_tier,
     decay_tiredness,
 )
-from emotional_engine.evaluator import evaluate_exchange, detect_people
+from emotional_engine.evaluator import evaluate_exchange, detect_people, inner_monologue
 from memory_filter.filter import filter_buffer
 from memory_filter.retrieval import select_memories
 from context import assemble, build_system_prompt, create_buffer, add_to_buffer, _extract_sensory_cues, _extract_topic_cues
@@ -40,7 +40,7 @@ from adapters.ollama import OllamaAdapter
 SOUL_FILE_PATH = "soul.json"
 MODEL_NAME = "dolphin3:latest"
 OLLAMA_HOST = "http://localhost:11434"
-DEBUG_MODE = True
+DEBUG_MODE = False
 CONTEXT_WINDOW_LIMIT = 4096  # estimated tokens before auto-refresh
 CHARS_PER_TOKEN = 4  # rough approximation
 
@@ -315,6 +315,73 @@ def refresh_context(soul: dict, emotional_state: dict, buffer: list, session_eve
 
     # Return clean buffer and session events.
     return create_buffer(), []
+
+# ─── INNER MONOLOGUE THREAD ───────────────────────────────────────────────────
+
+def start_monologue_thread(soul: dict, emotional_state_ref: list, adapter, buffer: list, name: str):
+    """
+    Runs the inner monologue in a background thread.
+    Monitors silence and runs shallow monologue after each exchange.
+    Runs deep monologue during sustained silence.
+    When expression impulse is true, prints the thought as unprompted speech.
+
+    emotional_state_ref — a single-element list wrapping emotional_state
+                          so the thread can see updates from the main loop.
+    """
+    import threading
+    import time
+
+    SHALLOW_INTERVAL = 30   # seconds between shallow monologue checks
+    DEEP_INTERVAL    = 180  # seconds of silence before deep monologue
+
+    last_exchange_time = [time.time()]
+    running = [True]
+
+    def monitor():
+        last_shallow = time.time()
+        last_deep = time.time()
+
+        while running[0]:
+            time.sleep(5)
+            now = time.time()
+            silence_duration = now - last_exchange_time[0]
+            emotional_state = emotional_state_ref[0]
+
+            # Shallow monologue — runs periodically after exchanges.
+            if now - last_shallow >= SHALLOW_INTERVAL:
+                last_shallow = now
+                result = inner_monologue(
+                    adapter=adapter,
+                    soul=soul,
+                    emotional_state=emotional_state,
+                    buffer=buffer,
+                    depth="shallow",
+                )
+                if result["expression_impulse"] and result["current_thought"]:
+                    soul["thought_buffer"]["current_thought"] = result["current_thought"]
+                    soul["thought_buffer"]["expression_impulse"] = True
+
+            # Deep monologue — runs during sustained silence.
+            if silence_duration >= DEEP_INTERVAL and now - last_deep >= DEEP_INTERVAL:
+                last_deep = now
+                result = inner_monologue(
+                    adapter=adapter,
+                    soul=soul,
+                    emotional_state=emotional_state,
+                    buffer=buffer,
+                    depth="deep",
+                )
+                if result["expression_impulse"] and result["current_thought"]:
+                    print(f"\n{name}: {result['current_thought']}\n")
+                    print("You: ", end="", flush=True)
+                    soul["thought_buffer"]["current_thought"] = result["current_thought"]
+                    soul["thought_buffer"]["expression_impulse"] = False
+
+    thread = threading.Thread(target=monitor, daemon=True)
+    thread.start()
+
+    return running, last_exchange_time
+
 # ─── SLEEP SEQUENCE ───────────────────────────────────────────────────────────
 
 def sleep_sequence(soul: dict, emotional_state: dict, adapter, buffer: list, session_events: list):
@@ -490,6 +557,16 @@ if __name__ == "__main__":
         from datetime import datetime, timezone
         session_start = datetime.now(timezone.utc)
 
+        # Start inner monologue background thread.
+        emotional_state_ref = [emotional_state]
+        monologue_running, last_exchange_time = start_monologue_thread(
+            soul=soul,
+            emotional_state_ref=emotional_state_ref,
+            adapter=adapter,
+            buffer=buffer,
+            name=name,
+        )
+
         while True:
             try:
                 user_input = input("You: ").strip()
@@ -573,6 +650,11 @@ if __name__ == "__main__":
             # Update buffer.
             add_to_buffer(buffer, f"You: {user_input}")
             add_to_buffer(buffer, f"{name}: {response}")
+
+            # Update monologue thread references.
+            import time
+            last_exchange_time[0] = time.time()
+            emotional_state_ref[0] = emotional_state
 
             # Evaluate emotional impact of this exchange.
             emotion_triggers = evaluate_exchange(

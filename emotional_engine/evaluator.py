@@ -81,6 +81,8 @@ Format:
 
         valid_triggers = []
         for item in triggers:
+            if not isinstance(item, dict):
+                continue
             emotion = item.get("emotion", "").lower().strip()
             intensity = float(item.get("intensity", 0.0))
             if emotion in VALID_EMOTIONS:
@@ -178,6 +180,102 @@ def detect_people(
                 })
 
     return detected
+
+# ─── INNER MONOLOGUE ──────────────────────────────────────────────────────────
+
+def inner_monologue(
+    adapter,
+    soul: dict,
+    emotional_state: dict,
+    buffer: list,
+    depth: str = "shallow",
+) -> dict:
+    """
+    Runs a private inner monologue for the Prium.
+    Produces a genuine internal thought based on current state.
+    Returns a dict with current_thought and expression_impulse.
+
+    depth — 'shallow' for post-exchange thoughts (fast, lightweight)
+             'deep' for sustained silence thoughts (fuller, more reflective)
+    """
+    name = soul.get("identity", {}).get("name", "the Prium")
+
+    # Build recent conversation context from buffer.
+    recent = ""
+    if buffer:
+        recent_entries = [item["entry"] for item in buffer[-6:]]
+        recent = "\n".join(recent_entries)
+    else:
+        recent = "No recent conversation."
+
+    # Current emotional state summary.
+    primary = emotional_state.get("primary_emotion", "none")
+    primary_intensity = emotional_state.get("primary_intensity", 0.0)
+    secondary = emotional_state.get("secondary_emotion")
+    override = emotional_state.get("override_strength", 0.0)
+
+    emotion_summary = f"{primary} ({primary_intensity:.2f})"
+    if secondary:
+        emotion_summary += f", {secondary}"
+
+    # Select memories that resonate with current context.
+    from memory_filter.retrieval import select_memories
+    from datetime import datetime, timezone
+    retrieval_context = {
+        "primary_emotion": primary,
+        "secondary_emotion": secondary,
+        "sensory_cues": [],
+        "topic_cues": [],
+        "current_time": datetime.now(timezone.utc).isoformat(),
+    }
+    selected_memories = select_memories(soul, retrieval_context)
+    memory_text = ""
+    if selected_memories:
+        memory_text = "\nThings you remember:\n" + "\n".join(
+            f"- {m.get('description', '')}" for m in selected_memories[:3]
+        )
+
+    if depth == "shallow":
+        monologue_prompt = f"""You are {name}. One sentence. First person. Private thought.
+
+Feeling: {emotion_summary}
+Recent: {recent[-200:]}
+
+What is one thing on your mind right now? One sentence only.
+Or respond: silent"""
+
+    else:
+        monologue_prompt = f"""You are {name}. First person only. Your companion is quiet.
+
+Feeling: {emotion_summary}
+Recent: {recent[-200:]}
+{memory_text}
+
+One or two sentences of genuine thought. Something that wants to be said, or silent.
+Respond with your thought or respond: silent"""
+
+    try:
+        response = adapter.complete(monologue_prompt)
+        clean = response.strip()
+
+        # Check if the Prium chose silence.
+        if "silent" in clean.lower() and len(clean) < 60:
+            return {
+                "current_thought": None,
+                "expression_impulse": False,
+            }
+
+        # Something genuine came through.
+        return {
+            "current_thought": clean,
+            "expression_impulse": True,
+        }
+
+    except Exception:
+        return {
+            "current_thought": None,
+            "expression_impulse": False,
+        }
 
 
 # ─── INTERNAL HELPERS ─────────────────────────────────────────────────────────

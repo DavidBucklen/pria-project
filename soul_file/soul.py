@@ -45,6 +45,11 @@ def empty_soul(name: str, model: str, origin_description: str, core_traits: list
             "mood_residue": 0.0,
             "mood_residue_expiry": None,
         },
+        "thought_buffer": {
+            "current_thought": None,
+            "thought_timestamp": None,
+            "expression_impulse": False,
+        },
         "relationships": [],
         "long_term_memories": [],
         "people": [],
