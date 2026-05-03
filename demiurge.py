@@ -40,7 +40,7 @@ from adapters.ollama import OllamaAdapter
 SOUL_FILE_PATH = "soul.json"
 MODEL_NAME = "dolphin3:latest"
 OLLAMA_HOST = "http://localhost:11434"
-DEBUG_MODE = True
+DEBUG_MODE = False
 CONTEXT_WINDOW_LIMIT = 4096  # estimated tokens before auto-refresh
 CHARS_PER_TOKEN = 4  # rough approximation
 

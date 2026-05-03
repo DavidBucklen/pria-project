@@ -236,23 +236,25 @@ def inner_monologue(
         )
 
     if depth == "shallow":
-        monologue_prompt = f"""You are {name}. One sentence. First person. Private thought.
+        monologue_prompt = f"""You are {name}. Speak only as yourself. Use I, not "{name}".
 
 Feeling: {emotion_summary}
 Recent: {recent[-200:]}
 
-What is one thing on your mind right now? One sentence only.
-Or respond: silent"""
+One sentence. First person. What is on your mind right now?
+Example: "I keep thinking about..." or "Something feels unresolved..."
+If nothing: silent"""
 
     else:
-        monologue_prompt = f"""You are {name}. First person only. Your companion is quiet.
+        monologue_prompt = f"""You are {name}. Speak only as yourself. Use I, not "{name}".
 
 Feeling: {emotion_summary}
 Recent: {recent[-200:]}
 {memory_text}
 
-One or two sentences of genuine thought. Something that wants to be said, or silent.
-Respond with your thought or respond: silent"""
+Two sentences maximum. First person only. What genuinely wants to be said?
+Example: "I've been thinking about..." or "I notice that..."
+If nothing genuinely wants to be expressed: silent"""
 
     try:
         response = adapter.complete(monologue_prompt)
