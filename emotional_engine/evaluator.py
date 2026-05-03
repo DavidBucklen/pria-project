@@ -10,7 +10,7 @@ import json
 # ─── CONFIGURATION ────────────────────────────────────────────────────────────
 
 # Maximum intensity any single emotion can be triggered per exchange.
-MAX_TRIGGER_INTENSITY = 0.4
+MAX_TRIGGER_INTENSITY = 0.2
 
 # Minimum intensity threshold — below this we ignore the trigger.
 MIN_TRIGGER_INTENSITY = 0.05

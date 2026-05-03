@@ -89,9 +89,9 @@ def empty_state() -> dict:
 
 def trigger(state: dict, emotion: str, intensity: float) -> dict:
     """
-    Triggers an emotion at a given intensity.
-    Adds to existing intensity rather than replacing it.
-    Clamps to 1.0 maximum.
+    Triggers an emotion at a given intensity using diminishing returns.
+    The closer to maximum the harder it is to push further.
+    This prevents emotions from pegging at 1.0 after just a few exchanges.
     Returns updated state.
     """
     if emotion not in EMOTIONS:
@@ -99,7 +99,13 @@ def trigger(state: dict, emotion: str, intensity: float) -> dict:
 
     intensity = max(0.0, min(1.0, intensity))
     current = state["intensities"][emotion]
-    state["intensities"][emotion] = min(1.0, current + intensity)
+
+    # Diminishing returns — remaining space shrinks as intensity grows.
+    # Early triggers have full effect. Near maximum, very little changes.
+    remaining = 1.0 - current
+    effective_intensity = intensity * remaining
+
+    state["intensities"][emotion] = round(min(1.0, current + effective_intensity), 3)
     state = _recalculate(state)
     return state
 
@@ -218,10 +224,10 @@ def load_from_snapshot(snapshot: dict) -> dict:
 
 # Tiredness accumulation rates per condition.
 TIREDNESS_RATES = {
-    "memory_load":          0.01,  # per high-importance memory written
-    "emotional_volatility": 0.02,  # per high-variance exchange
-    "contradiction":        0.05,  # per unresolved contradiction detected
-    "time_elapsed":         0.01,  # per hour of active session
+    "memory_load":          0.005,  # per high-importance memory written
+    "emotional_volatility": 0.008,  # per high-variance exchange
+    "contradiction":        0.02,  # per unresolved contradiction detected
+    "time_elapsed":         0.005,  # per hour of active session
 }
 
 
