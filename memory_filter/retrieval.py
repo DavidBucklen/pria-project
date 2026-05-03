@@ -7,7 +7,7 @@
 # ─── CONFIGURATION ────────────────────────────────────────────────────────────
 
 # Memories with importance >= this value always surface regardless of resonance.
-ANCHOR_THRESHOLD = 0.85
+ANCHOR_THRESHOLD = 0.92
 
 # Memories with resonance score >= this value are included in context.
 # Tunable — initial value to be calibrated during testing.

@@ -40,7 +40,7 @@ from adapters.ollama import OllamaAdapter
 SOUL_FILE_PATH = "soul.json"
 MODEL_NAME = "dolphin3:latest"
 OLLAMA_HOST = "http://localhost:11434"
-DEBUG_MODE = False
+DEBUG_MODE = True
 CONTEXT_WINDOW_LIMIT = 4096  # estimated tokens before auto-refresh
 CHARS_PER_TOKEN = 4  # rough approximation
 
@@ -354,7 +354,7 @@ def start_monologue_thread(soul: dict, emotional_state_ref: list, adapter, buffe
                     adapter=adapter,
                     soul=soul,
                     emotional_state=emotional_state,
-                    buffer=buffer,
+                    buffer=list(buffer[-6:]),
                     depth="shallow",
                 )
                 if result["expression_impulse"] and result["current_thought"]:
@@ -368,7 +368,7 @@ def start_monologue_thread(soul: dict, emotional_state_ref: list, adapter, buffe
                     adapter=adapter,
                     soul=soul,
                     emotional_state=emotional_state,
-                    buffer=buffer,
+                    buffer=list(buffer[-6:]),
                     depth="deep",
                 )
                 if result["expression_impulse"] and result["current_thought"]:
