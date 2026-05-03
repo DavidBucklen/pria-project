@@ -214,3 +214,78 @@ def load_from_snapshot(snapshot: dict) -> dict:
 
     state = _recalculate(state)
     return state
+# ─── TIREDNESS ────────────────────────────────────────────────────────────────
+
+# Tiredness accumulation rates per condition.
+TIREDNESS_RATES = {
+    "memory_load":          0.01,  # per high-importance memory written
+    "emotional_volatility": 0.02,  # per high-variance exchange
+    "contradiction":        0.05,  # per unresolved contradiction detected
+    "time_elapsed":         0.01,  # per hour of active session
+}
+
+
+# Tiredness expression thresholds.
+TIREDNESS_THRESHOLDS = [
+    (1.0,  "override"),
+    (0.80, "severe"),
+    (0.60, "moderate"),
+    (0.40, "mild"),
+]
+
+
+def accumulate_tiredness(
+    current_tiredness: float,
+    memory_written: bool = False,
+    memory_importance: float = 0.0,
+    emotional_volatility: float = 0.0,
+    contradiction_detected: bool = False,
+    session_hours: float = 0.0,
+) -> float:
+    """
+    Accumulates tiredness from four conditions using diminishing returns.
+    The closer to 1.0, the harder it is to accumulate further.
+    Returns updated tiredness value clamped to 1.0.
+    """
+    delta = 0.0
+
+    # Memory load — high importance memories cost more.
+    if memory_written:
+        delta += TIREDNESS_RATES["memory_load"] * (0.5 + memory_importance)
+
+    # Emotional volatility — scaled by how volatile the exchange was.
+    if emotional_volatility > 0.3:
+        delta += TIREDNESS_RATES["emotional_volatility"] * emotional_volatility
+
+    # Contradiction — sharpest single contributor.
+    if contradiction_detected:
+        delta += TIREDNESS_RATES["contradiction"]
+
+    # Time elapsed — slow background accumulation.
+    delta += TIREDNESS_RATES["time_elapsed"] * session_hours
+
+    # Diminishing returns — harder to accumulate near maximum.
+    remaining = 1.0 - current_tiredness
+    effective_delta = delta * remaining
+
+    return round(min(1.0, current_tiredness + effective_delta), 3)
+
+
+def get_tiredness_tier(tiredness: float) -> str:
+    """
+    Returns the current tiredness expression tier.
+    """
+    for threshold, label in TIREDNESS_THRESHOLDS:
+        if tiredness >= threshold:
+            return label
+    return "none"
+
+
+def decay_tiredness(sleep_depth: float) -> float:
+    """
+    Resets tiredness after sleep based on sleep depth.
+    Deep sleep fully restores. Shallow sleep partially restores.
+    Returns new tiredness value.
+    """
+    restoration = 0.5 + (sleep_depth * 0.5)
+    return round(max(0.0, 1.0 - restoration), 3)

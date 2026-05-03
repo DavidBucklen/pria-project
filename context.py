@@ -223,6 +223,22 @@ def assemble(
     else:
         lines.append("State: subtle bias — emotional state present but not dominant")
 
+    # Tiredness state.
+    sleep_state = soul.get("sleep_state", {})
+    tiredness = sleep_state.get("tiredness", 0.0)
+    if tiredness >= 0.80:
+        lines.append(f"Tiredness: {tiredness:.2f} — severely tired, struggling to think clearly")
+    elif tiredness >= 0.60:
+        lines.append(f"Tiredness: {tiredness:.2f} — noticeably tired, wants to sleep soon")
+    elif tiredness >= 0.40:
+        lines.append(f"Tiredness: {tiredness:.2f} — mildly tired")
+
+    # Mood residue from last sleep.
+    mood_residue = sleep_state.get("mood_residue", 0.0)
+    dream_buffer = sleep_state.get("dream_buffer")
+    if mood_residue > 0.0 and dream_buffer:
+        lines.append(f"Waking residue: {dream_buffer[:120]}")
+
     lines.append("")
 
     # [BODY STATE] — World Mode only.

@@ -25,6 +25,9 @@ from emotional_engine.engine import (
     get_override_tier,
     state_to_snapshot,
     load_from_snapshot,
+    accumulate_tiredness,
+    get_tiredness_tier,
+    decay_tiredness,
 )
 from emotional_engine.evaluator import evaluate_exchange, detect_people
 from memory_filter.filter import filter_buffer
@@ -35,9 +38,9 @@ from adapters.ollama import OllamaAdapter
 # ─── CONFIGURATION ────────────────────────────────────────────────────────────
 
 SOUL_FILE_PATH = "soul.json"
-MODEL_NAME = "huihui_ai/gemma-4-abliterated:latest"
+MODEL_NAME = "dolphin3:latest"
 OLLAMA_HOST = "http://localhost:11434"
-DEBUG_MODE = False
+DEBUG_MODE = True
 CONTEXT_WINDOW_LIMIT = 4096  # estimated tokens before auto-refresh
 CHARS_PER_TOKEN = 4  # rough approximation
 
@@ -83,6 +86,23 @@ def startup() -> tuple:
     else:
         emotional_state = empty_state()
         print("Emotional state initialized fresh.")
+        
+    # Restore tiredness from soul file.
+    tiredness = soul.get("sleep_state", {}).get("tiredness", 0.0)
+
+    # Check if dream buffer has expired.
+    dream_buffer_expiry = soul.get("sleep_state", {}).get("dream_buffer_expiry")
+    if dream_buffer_expiry:
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
+        expiry = datetime.fromisoformat(dream_buffer_expiry)
+        if now > expiry:
+            soul["sleep_state"]["dream_buffer"] = None
+            soul["sleep_state"]["dream_buffer_expiry"] = None
+            if DEBUG_MODE:
+                print("Dream buffer expired and cleared.")
+
+    print(f"Tiredness restored: {tiredness:.2f}")
 
     # Log session start.
     log_session_start(soul, model=adapter.get_model_name())
@@ -295,6 +315,119 @@ def refresh_context(soul: dict, emotional_state: dict, buffer: list, session_eve
 
     # Return clean buffer and session events.
     return create_buffer(), []
+# ─── SLEEP SEQUENCE ───────────────────────────────────────────────────────────
+
+def sleep_sequence(soul: dict, emotional_state: dict, adapter, buffer: list, session_events: list):
+    """
+    Runs the full sleep sequence when a Prium goes to sleep.
+    Phase 1 — Deep Sleep: consolidation, pruning, soul file save.
+    Phase 2 — REM: optional model call if warranted, mood residue write.
+    """
+    from datetime import datetime, timezone, timedelta
+
+    name = soul["identity"]["name"]
+    tiredness = soul.get("sleep_state", {}).get("tiredness", 1.0)
+
+    print(f"\n─────────────────────────────────────────────────────────────")
+    print(f"{name} is sleeping.")
+    print(f"Running deep sleep consolidation...")
+
+    # ── Phase 1 — Deep Sleep ──────────────────────────────────────────────────
+
+    # Write any remaining session memories first.
+    if session_events:
+        results = filter_buffer(session_events)
+        for event, result in zip(session_events, results):
+            if result["persist"]:
+                from context import _extract_sensory_cues, _extract_topic_cues
+                write_memory(
+                    soul=soul,
+                    description=event["description"],
+                    score=result["score"],
+                    sharpness=emotional_state.get("override_strength", 0.0),
+                    emotional_context={
+                        "primary_emotion": emotional_state.get("primary_emotion"),
+                        "secondary_emotion": emotional_state.get("secondary_emotion"),
+                        "override_strength": emotional_state.get("override_strength", 0.0),
+                    },
+                    sensory_tags=event.get("sensory_tags", []),
+                    topic_tags=event.get("topic_tags", []),
+                    immediate=result["immediate_write"],
+                )
+
+    # Prune low importance memories below decay threshold.
+    memories = soul.get("long_term_memories", [])
+    before_count = len(memories)
+    soul["long_term_memories"] = [
+        m for m in memories
+        if m.get("importance", 0.0) >= 0.20 or m.get("anchor", False)
+    ]
+    pruned = before_count - len(soul["long_term_memories"])
+    if pruned > 0:
+        print(f"Pruned {pruned} low-importance memories.")
+
+    # Calculate sleep depth from tiredness — more tired means deeper sleep.
+    sleep_depth = round(min(1.0, tiredness * 1.2), 3)
+
+    # Reset tiredness based on sleep depth.
+    new_tiredness = decay_tiredness(sleep_depth)
+
+    # Update sleep state.
+    now = datetime.now(timezone.utc)
+    soul["sleep_state"]["tiredness"] = new_tiredness
+    soul["sleep_state"]["last_sleep"] = now.isoformat()
+    soul["sleep_state"]["sleep_depth_last"] = sleep_depth
+
+    # ── Phase 2 — REM ─────────────────────────────────────────────────────────
+
+    # REM only runs if sleep is deep enough and there is something to process.
+    run_rem = sleep_depth >= 0.5 and len(soul.get("long_term_memories", [])) > 0
+
+    if run_rem:
+        print(f"Running REM...")
+
+        recent_memories = soul["long_term_memories"][-5:]
+        memory_text = "\n".join(
+            f"- {m.get('description', '')}" for m in recent_memories
+        )
+
+        rem_prompt = f"""You are {name}. You are dreaming.
+
+These are your most recent experiences:
+{memory_text}
+
+You are not awake. You are processing. You are not speaking to anyone.
+Describe in one or two plain sentences what feeling or residue this leaves you with as you sleep.
+Not what you think. Not what you believe. Just what color or texture the feeling has.
+Plain language only. No metaphor. No philosophy."""
+
+        try:
+            dream_response = adapter.complete(rem_prompt)
+
+            # Store transient mood residue — expires in one hour.
+            expiry = (now + timedelta(hours=1)).isoformat()
+            soul["sleep_state"]["dream_buffer"] = dream_response.strip()
+            soul["sleep_state"]["dream_buffer_expiry"] = expiry
+            soul["sleep_state"]["mood_residue"] = min(1.0, sleep_depth * 0.6)
+            soul["sleep_state"]["mood_residue_expiry"] = expiry
+
+            if DEBUG_MODE:
+                print(f"[REM] Dream residue: {dream_response.strip()[:80]}")
+
+        except Exception:
+            pass
+
+    # Save emotional state.
+    if "emotional_history" not in soul:
+        soul["emotional_history"] = {}
+    soul["emotional_history"]["current_state"] = state_to_snapshot(emotional_state)
+
+    # Log session end and save.
+    log_session_end(soul)
+    save(soul, SOUL_FILE_PATH)
+
+    print(f"{name} rests. Tiredness reset to {new_tiredness:.2f}.")
+    print(f"─────────────────────────────────────────────────────────────\n")
 # ─── SHUTDOWN ─────────────────────────────────────────────────────────────────
 
 def shutdown(soul: dict, emotional_state: dict, buffer: list, session_events: list = None):
@@ -344,6 +477,9 @@ def shutdown(soul: dict, emotional_state: dict, buffer: list, session_events: li
 if __name__ == "__main__":
     soul, emotional_state, adapter, buffer = startup()
     session_events = []
+    soul, emotional_state, adapter, buffer = startup()
+    session_events = []
+    tiredness = soul.get("sleep_state", {}).get("tiredness", 0.0)
 
     try:
         name = soul["identity"]["name"]
@@ -351,6 +487,8 @@ if __name__ == "__main__":
 
         print(f"You are now speaking with {name}.")
         print("Type 'quit' or 'exit' to end the session.\n")
+        from datetime import datetime, timezone
+        session_start = datetime.now(timezone.utc)
 
         while True:
             try:
@@ -363,6 +501,11 @@ if __name__ == "__main__":
             if user_input.strip() == "/refresh":
                 buffer, session_events = refresh_context(soul, emotional_state, buffer, session_events)
                 continue
+            if user_input.strip() == "/sleep":
+                print(f"\n{name} is going to sleep.\n")
+                tiredness = 1.0
+                soul["sleep_state"]["tiredness"] = tiredness
+                break
             if user_input.strip().startswith("/attach"):
                 parts = user_input.strip().split(" ", 1)
                 if len(parts) < 2:
@@ -447,6 +590,38 @@ if __name__ == "__main__":
             if DEBUG_MODE:
                 print(f"[EVALUATOR] Triggers: {emotion_triggers}")
 
+            # Accumulate tiredness from this exchange.
+            from datetime import datetime, timezone
+            session_hours = (datetime.now(timezone.utc) - session_start).total_seconds() / 3600
+            memory_written = any(
+                result["persist"]
+                for result in filter_buffer(session_events[-1:])
+            ) if session_events else False
+            memory_importance = session_events[-1].get("emotional_intensity", 0.0) if session_events else 0.0
+            emotional_volatility = emotional_state.get("override_strength", 0.0)
+
+            tiredness = accumulate_tiredness(
+                current_tiredness=tiredness,
+                memory_written=memory_written,
+                memory_importance=memory_importance,
+                emotional_volatility=emotional_volatility,
+                session_hours=session_hours,
+            )
+
+            # Update tiredness in soul file.
+            soul["sleep_state"]["tiredness"] = tiredness
+
+            # Check tiredness tier and handle expression.
+            tiredness_tier = get_tiredness_tier(tiredness)
+
+            if DEBUG_MODE:
+                print(f"[TIREDNESS] {tiredness:.2f} — {tiredness_tier}")
+
+            # Override — force sleep regardless of companion input.
+            if tiredness_tier == "override":
+                print(f"\n{name} has to sleep. The session will end now.\n")
+                break
+
             # Detect people mentioned in this exchange.
             detected_people = detect_people(
                 adapter=adapter,
@@ -482,4 +657,8 @@ if __name__ == "__main__":
                 "topic_tags": list(set(topic_tags)),
             })  
     finally:
-        shutdown(soul, emotional_state, buffer, session_events)
+        tiredness = soul.get("sleep_state", {}).get("tiredness", 0.0)
+        if tiredness >= 0.8:
+            sleep_sequence(soul, emotional_state, adapter, buffer, session_events)
+        else:
+            shutdown(soul, emotional_state, buffer, session_events)
