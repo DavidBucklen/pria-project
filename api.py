@@ -8,22 +8,27 @@
 from flask import Flask, request, jsonify
 from datetime import datetime, timezone
 import threading
+import time
 import sys
 import os
 
 # Import all Demiurge components.
-from soul_file.soul import load, save, log_session_start, log_session_end, write_memory
-from emotional_engine.engine import empty_state, trigger, decay, state_to_snapshot, load_from_snapshot
-from emotional_engine.evaluator import evaluate_exchange
+from soul_file.soul import load, save, log_session_start, log_session_end, write_memory, write_person
+from emotional_engine.engine import (
+    empty_state, trigger, decay, state_to_snapshot, load_from_snapshot,
+    accumulate_tiredness, get_tiredness_tier, decay_tiredness,
+    apply_baseline_modifiers,
+)
+from emotional_engine.evaluator import evaluate_exchange, detect_people, inner_monologue
 from memory_filter.filter import filter_buffer
-from context import assemble, build_system_prompt, create_buffer, add_to_buffer
+from context import assemble, build_system_prompt, create_buffer, add_to_buffer, _extract_sensory_cues, _extract_topic_cues
 from adapters.ollama import OllamaAdapter
-from demiurge import startup, shutdown, SOUL_FILE_PATH, MODEL_NAME, OLLAMA_HOST
+from demiurge import startup, shutdown, sleep_sequence, SOUL_FILE_PATH, MODEL_NAME, OLLAMA_HOST
+from voice import speak_to_bytes
 
 app = Flask(__name__)
 
 # ─── GLOBAL STATE ─────────────────────────────────────────────────────────────
-# Single session state shared across all requests.
 
 state = {
     "soul": None,
@@ -34,9 +39,15 @@ state = {
     "system_prompt": None,
     "name": None,
     "ready": False,
+    "tiredness": 0.0,
+    "session_start": None,
+    "last_exchange_time": None,
 }
 
 state_lock = threading.Lock()
+
+import queue
+autonomous_speech_queue = queue.Queue()
 
 
 # ─── INITIALIZATION ───────────────────────────────────────────────────────────
@@ -52,6 +63,18 @@ def initialize():
     system_prompt = build_system_prompt(soul)
     name = soul["identity"]["name"]
 
+    # Restore tiredness from soul file.
+    tiredness = soul.get("sleep_state", {}).get("tiredness", 0.0)
+
+    # Check if dream buffer has expired.
+    dream_buffer_expiry = soul.get("sleep_state", {}).get("dream_buffer_expiry")
+    if dream_buffer_expiry:
+        now = datetime.now(timezone.utc)
+        expiry = datetime.fromisoformat(dream_buffer_expiry)
+        if now > expiry:
+            soul["sleep_state"]["dream_buffer"] = None
+            soul["sleep_state"]["dream_buffer_expiry"] = None
+
     with state_lock:
         state["soul"] = soul
         state["emotional_state"] = emotional_state
@@ -61,9 +84,79 @@ def initialize():
         state["system_prompt"] = system_prompt
         state["name"] = name
         state["ready"] = True
+        state["tiredness"] = tiredness
+        state["session_start"] = datetime.now(timezone.utc)
+        state["last_exchange_time"] = time.time()
 
     print(f"API ready. {name} is listening.")
+    print(f"Tiredness restored: {tiredness:.2f}")
     print(f"Connect from your phone at http://<your-local-ip>:5000\n")
+
+    # Start inner monologue background thread.
+    start_api_monologue_thread()
+
+
+# ─── INNER MONOLOGUE THREAD ───────────────────────────────────────────────────
+
+def start_api_monologue_thread():
+    """
+    Runs the inner monologue in a background thread for API mode.
+    Stores autonomous speech in state for delivery on next request.
+    """
+    SHALLOW_INTERVAL = 30
+    DEEP_INTERVAL = 180
+
+    def monitor():
+        last_shallow = time.time()
+        last_deep = time.time()
+
+        while state["ready"]:
+            time.sleep(5)
+            now = time.time()
+
+            with state_lock:
+                emotional_state = state["emotional_state"]
+                soul = state["soul"]
+                adapter = state["adapter"]
+                buffer = state["buffer"]
+                last_exchange = state["last_exchange_time"] or now
+
+            silence_duration = now - last_exchange
+
+            # Shallow monologue — only fires if there has been at least one exchange.
+            if now - last_shallow >= SHALLOW_INTERVAL and state["last_exchange_time"] and (now - state["last_exchange_time"]) >= 60:
+                last_shallow = now
+                result = inner_monologue(
+                    adapter=adapter,
+                    soul=soul,
+                    emotional_state=emotional_state,
+                    buffer=list(buffer[-6:]),
+                    depth="shallow",
+                )
+                if result["expression_impulse"] and result["current_thought"]:
+                    with state_lock:
+                        soul["thought_buffer"]["current_thought"] = result["current_thought"]
+                        soul["thought_buffer"]["expression_impulse"] = True
+                    autonomous_speech_queue.put(result["current_thought"])
+
+            # Deep monologue during sustained silence.
+            if silence_duration >= DEEP_INTERVAL and now - last_deep >= DEEP_INTERVAL:
+                last_deep = now
+                result = inner_monologue(
+                    adapter=adapter,
+                    soul=soul,
+                    emotional_state=emotional_state,
+                    buffer=list(buffer[-6:]),
+                    depth="deep",
+                )
+                if result["expression_impulse"] and result["current_thought"]:
+                    with state_lock:
+                        soul["thought_buffer"]["current_thought"] = result["current_thought"]
+                        soul["thought_buffer"]["expression_impulse"] = True
+                    autonomous_speech_queue.put(result["current_thought"])
+
+    thread = threading.Thread(target=monitor, daemon=True)
+    thread.start()
 
 
 # ─── ROUTES ───────────────────────────────────────────────────────────────────
@@ -73,17 +166,30 @@ def index():
     """Serves the mobile chat interface."""
     with open("phone.html", "r", encoding="utf-8") as f:
         return f.read(), 200, {"Content-Type": "text/html"}
-    
+
+
 @app.route("/status", methods=["GET"])
 def status():
     """
-    Health check. Returns Prium name and emotional state.
+    Health check. Returns Prium name, emotional state, and tiredness.
+    Also returns any pending autonomous speech.
     """
     with state_lock:
         if not state["ready"]:
             return jsonify({"ready": False}), 503
 
         emotional = state["emotional_state"]
+        soul = state["soul"]
+        tiredness = state["tiredness"]
+
+        # Check for pending autonomous speech.
+        autonomous_message = None
+        thought_buffer = soul.get("thought_buffer", {})
+        if thought_buffer.get("expression_impulse") and thought_buffer.get("current_thought"):
+            autonomous_message = thought_buffer["current_thought"]
+            soul["thought_buffer"]["expression_impulse"] = False
+            soul["thought_buffer"]["current_thought"] = None
+
         return jsonify({
             "ready": True,
             "name": state["name"],
@@ -91,7 +197,65 @@ def status():
             "primary_intensity": emotional.get("primary_intensity", 0.0),
             "secondary_emotion": emotional.get("secondary_emotion"),
             "override_strength": emotional.get("override_strength", 0.0),
+            "tiredness": tiredness,
+            "tiredness_tier": get_tiredness_tier(tiredness),
+            "autonomous_message": autonomous_message,
         })
+    
+
+@app.route("/config", methods=["GET"])
+def config():
+    """Returns the server's own host URL so phone.html can self-configure."""
+    host = request.host
+    return jsonify({"api_url": f"http://{host}"})
+
+@app.route("/speak", methods=["POST"])
+def speak_route():
+    """
+    Accepts { "text": "..." } and returns a WAV audio file.
+    Used by phone.html to play Kairos's responses aloud.
+    """
+    data = request.get_json()
+    if not data or "text" not in data:
+        return jsonify({"error": "No text provided"}), 400
+
+    text = data["text"].strip()
+    if not text:
+        return jsonify({"error": "Empty text"}), 400
+
+    audio_bytes = speak_to_bytes(text, voice="bf_emma", speed=1.0)
+    if not audio_bytes:
+        return jsonify({"error": "Audio generation failed"}), 500
+
+    return app.response_class(
+        response=audio_bytes,
+        status=200,
+        mimetype="audio/wav",
+    )
+
+@app.route("/stream", methods=["GET"])
+def stream():
+    """
+    Server-Sent Events stream for autonomous speech delivery.
+    Phone connects once and listens for unprompted messages from Kairos.
+    """
+    def event_generator():
+        while True:
+            try:
+                message = autonomous_speech_queue.get(timeout=30)
+                yield f"data: {message}\n\n"
+            except queue.Empty:
+                # Send keepalive ping so connection stays open.
+                yield f": keepalive\n\n"
+
+    return app.response_class(
+        event_generator(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        }
+    )   
 
 
 @app.route("/chat", methods=["POST"])
@@ -131,15 +295,55 @@ def chat():
             mode="chat",
         )
 
+        # Auto-refresh if context window is approaching limit.
+        estimated_tokens = len(context_block) // 4
+        if estimated_tokens >= 4096:
+            if state["session_events"]:
+                results = filter_buffer(state["session_events"])
+                for event, result in zip(state["session_events"], results):
+                    if result["persist"]:
+                        write_memory(
+                            soul=soul,
+                            description=event["description"],
+                            score=result["score"],
+                            sharpness=state["emotional_state"].get("override_strength", 0.0),
+                            emotional_context={
+                                "primary_emotion": state["emotional_state"].get("primary_emotion"),
+                                "secondary_emotion": state["emotional_state"].get("secondary_emotion"),
+                                "override_strength": state["emotional_state"].get("override_strength", 0.0),
+                            },
+                            sensory_tags=event.get("sensory_tags", []),
+                            topic_tags=event.get("topic_tags", []),
+                            immediate=result["immediate_write"],
+                        )
+            state["buffer"] = create_buffer()
+            state["session_events"] = []
+            buffer = state["buffer"]
+            context_block = assemble(
+                soul=soul,
+                emotional_state=state["emotional_state"],
+                buffer=buffer,
+                current_input=user_input,
+                mode="chat",
+            )
+
         # Build full prompt.
         full_prompt = f"{system_prompt}\n\n{context_block}"
 
         # Get response.
         response = adapter.complete(full_prompt)
 
+        # Clear expression impulse after thought has been used.
+        if soul.get("thought_buffer", {}).get("expression_impulse"):
+            soul["thought_buffer"]["expression_impulse"] = False
+            soul["thought_buffer"]["current_thought"] = None
+
         # Update buffer.
-        add_to_buffer(buffer, f"You: {user_input}")
+        add_to_buffer(buffer, f"Chris: {user_input}")
         add_to_buffer(buffer, f"{name}: {response}")
+
+        # Update last exchange time.
+        state["last_exchange_time"] = time.time()
 
         # Evaluate emotional impact.
         emotion_triggers = evaluate_exchange(
@@ -152,19 +356,82 @@ def chat():
 
         # Apply triggers.
         for emotion, intensity in emotion_triggers:
+            intensity = apply_baseline_modifiers(emotion, intensity, soul)
             state["emotional_state"] = trigger(
                 state["emotional_state"], emotion, intensity
             )
 
+        # Detect people mentioned.
+        detected_people = detect_people(
+            adapter=adapter,
+            soul=soul,
+            human_message=user_input,
+            prium_response=response,
+        )
+        for person in detected_people:
+            write_person(
+                soul=soul,
+                name=person["name"],
+                relationship_to_companion=person["relationship_to_companion"],
+                relationship_type=person["relationship_type"],
+            )
+
+        # Accumulate tiredness.
+        session_hours = (
+            datetime.now(timezone.utc) - state["session_start"]
+        ).total_seconds() / 3600
+
+        memory_written = any(
+            result["persist"]
+            for result in filter_buffer(state["session_events"][-1:])
+        ) if state["session_events"] else False
+
+        memory_importance = (
+            state["session_events"][-1].get("emotional_intensity", 0.0)
+            if state["session_events"] else 0.0
+        )
+
+        emotional_volatility = state["emotional_state"].get("override_strength", 0.0)
+
+        state["tiredness"] = accumulate_tiredness(
+            current_tiredness=state["tiredness"],
+            memory_written=memory_written,
+            memory_importance=memory_importance,
+            emotional_volatility=emotional_volatility,
+            session_hours=session_hours,
+        )
+        soul["sleep_state"]["tiredness"] = state["tiredness"]
+
+        # Check tiredness tier and handle expression.
+        tiredness_tier = get_tiredness_tier(state["tiredness"])
+
+        # Tiredness expression — inject into response context at lower tiers.
+        if tiredness_tier == "override":
+            threading.Thread(
+                target=lambda: sleep_sequence(soul, state["emotional_state"], adapter, buffer, state["session_events"]),
+                daemon=True
+            ).start()
+            state["ready"] = False
+        elif tiredness_tier in ("high", "critical"):
+            soul["thought_buffer"]["current_thought"] = (
+                "I am very tired. I need to rest soon."
+            )
+            soul["thought_buffer"]["expression_impulse"] = True
+
         # Record session event.
+        sensory_tags = _extract_sensory_cues(user_input) + _extract_sensory_cues(response)
+        topic_tags = _extract_topic_cues(user_input) + _extract_topic_cues(response)
         override = state["emotional_state"].get("override_strength", 0.0)
+
         state["session_events"].append({
-            "description": f"Companion said: {user_input[:100]}",
+            "description": f"{name}'s companion said: {user_input[:80]} | {name} replied: {response[:80]}",
             "identity_shaping": False,
-            "first_occurrence": len(state["session_events"]) == 0,
+            "first_occurrence": len(state["session_events"]) == 1,
             "relationship_change": False,
             "emotional_intensity": override,
             "threshold_crossing": override >= 0.75,
+            "sensory_tags": list(set(sensory_tags)),
+            "topic_tags": list(set(topic_tags)),
         })
 
         emotional_snapshot = {
@@ -172,6 +439,8 @@ def chat():
             "primary_intensity": state["emotional_state"].get("primary_intensity", 0.0),
             "secondary_emotion": state["emotional_state"].get("secondary_emotion"),
             "override_strength": state["emotional_state"].get("override_strength", 0.0),
+            "tiredness": state["tiredness"],
+            "tiredness_tier": tiredness_tier,
         }
 
         return jsonify({
@@ -185,7 +454,6 @@ def chat():
 def refresh():
     """
     Refreshes the context window while preserving soul file and emotional state.
-    Equivalent to typing /refresh in chat mode.
     """
     with state_lock:
         if not state["ready"]:
@@ -210,6 +478,8 @@ def refresh():
                             "secondary_emotion": emotional_state.get("secondary_emotion"),
                             "override_strength": emotional_state.get("override_strength", 0.0),
                         },
+                        sensory_tags=event.get("sensory_tags", []),
+                        topic_tags=event.get("topic_tags", []),
                         immediate=result["immediate_write"],
                     )
 
@@ -226,6 +496,36 @@ def refresh():
         return jsonify({"status": "refreshed", "name": state["name"]})
 
 
+@app.route("/sleep", methods=["POST"])
+def force_sleep():
+    """
+    Forces the Prium to sleep immediately.
+    Runs the full sleep sequence and resets tiredness.
+    """
+    with state_lock:
+        if not state["ready"]:
+            return jsonify({"error": "Prium not ready"}), 503
+
+        soul = state["soul"]
+        soul["sleep_state"]["tiredness"] = 1.0
+        state["tiredness"] = 1.0
+
+    sleep_sequence(
+        soul=state["soul"],
+        emotional_state=state["emotional_state"],
+        adapter=state["adapter"],
+        buffer=state["buffer"],
+        session_events=state["session_events"],
+    )
+
+    with state_lock:
+        state["tiredness"] = state["soul"]["sleep_state"]["tiredness"]
+        state["session_events"] = []
+        state["buffer"] = create_buffer()
+
+    return jsonify({"status": "slept", "tiredness": state["tiredness"]})
+
+
 @app.route("/end", methods=["POST"])
 def end_session():
     """
@@ -236,15 +536,28 @@ def end_session():
         if not state["ready"]:
             return jsonify({"error": "Prium not ready"}), 503
 
+        tiredness = state["tiredness"]
+
+    if tiredness >= 0.8:
+        sleep_sequence(
+            soul=state["soul"],
+            emotional_state=state["emotional_state"],
+            adapter=state["adapter"],
+            buffer=state["buffer"],
+            session_events=state["session_events"],
+        )
+    else:
         shutdown(
             soul=state["soul"],
             emotional_state=state["emotional_state"],
             buffer=state["buffer"],
             session_events=state["session_events"],
         )
+
+    with state_lock:
         state["ready"] = False
 
-        return jsonify({"status": "session ended"})
+    return jsonify({"status": "session ended"})
 
 
 # ─── MAIN ─────────────────────────────────────────────────────────────────────

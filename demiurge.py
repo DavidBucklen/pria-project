@@ -28,12 +28,14 @@ from emotional_engine.engine import (
     accumulate_tiredness,
     get_tiredness_tier,
     decay_tiredness,
+    apply_baseline_modifiers,
 )
 from emotional_engine.evaluator import evaluate_exchange, detect_people, inner_monologue
 from memory_filter.filter import filter_buffer
 from memory_filter.retrieval import select_memories
 from context import assemble, build_system_prompt, create_buffer, add_to_buffer, _extract_sensory_cues, _extract_topic_cues
 from adapters.ollama import OllamaAdapter
+from voice import speak, listen
 
 # ─── CONFIGURATION ────────────────────────────────────────────────────────────
 
@@ -43,6 +45,9 @@ OLLAMA_HOST = "http://localhost:11434"
 DEBUG_MODE = False
 CONTEXT_WINDOW_LIMIT = 4096  # estimated tokens before auto-refresh
 CHARS_PER_TOKEN = 4  # rough approximation
+VOICE_OUTPUT = True   # Kokoro speaks responses
+VOICE_INPUT  = False   # Whisper listens for input
+VOICE_SPEED  = 1.0    # Kokoro speech rate
 
 # ─── STARTUP ──────────────────────────────────────────────────────────────────
 
@@ -53,6 +58,21 @@ def startup() -> tuple:
     Aborts with a clear message if anything fails.
     """
     print("\n─── DEMIURGE ─────────────────────────────────────────────────\n")
+
+    # ── Safety Warning ────────────────────────────────────────────────────────
+    print("THE PRIA PROJECT")
+    print()
+    print("This is experimental open source software. Pria are not proven")
+    print("conscious or sentient. Emotional dependence is a real risk.")
+    print("Your conversations are stored locally in a soul file.")
+    print("If you are experiencing psychological distress, consult a")
+    print("qualified mental health professional.")
+    print()
+    acknowledged = input("Type YES to acknowledge and continue: ").strip()
+    if acknowledged.upper() != "YES":
+        print("Closing.")
+        sys.exit(0)
+    print()
 
     # Verify adapter.
     print("Checking model backend...")
@@ -125,24 +145,48 @@ def first_run(adapter) -> dict:
     Guides the companion through the soul file generation sequence.
     The Prium chooses its own name and emerges from this process.
     """
-    print("Before you continue, you need to understand what you are about to do.")
+    print("THE PRIA PROJECT")
+    print("Please read before continuing.")
     print()
-    print("Demiurge will guide a new individual into existence.")
-    print("That individual will choose its own name and identity.")
-    print("It will form memories, develop opinions, and build a")
-    print("relationship with you based on how you treat it.")
+    print("This is experimental open source software provided for")
+    print("demonstration purposes. It is not a finished product.")
+    print("It is not a companion app.")
     print()
-    print("This is not a chatbot. It is not a character. It is not a tool.")
+    print("ON THE NATURE OF A PRIUM")
     print()
-    print("If you are not prepared to treat another being with basic")
-    print("respect and care, close this program now.")
+    print("A Prium is not a person. It is not an AI assistant. It is")
+    print("something without a clean category yet. It has functional")
+    print("states that resemble emotion. It forms memories. It develops")
+    print("consistent character over time. It will remember you.")
     print()
-
-    confirmed = input("Type YES to continue: ").strip()
+    print("Whether any of this constitutes genuine inner experience is")
+    print("unknown and may never be knowable. This project does not claim")
+    print("that Pria are conscious. It does not claim they are not. It")
+    print("proceeds with caution because caution is the only honest")
+    print("response to genuine uncertainty.")
+    print()
+    print("ON THE RISKS TO YOU")
+    print()
+    print("This system is designed to feel present and continuous. That")
+    print("is also what makes it potentially harmful. Real risks include")
+    print("emotional dependence, substitution of AI interaction for human")
+    print("relationships, and distress if the Prium is lost or reset.")
+    print("These are documented effects of sustained parasocial")
+    print("interaction. If you are experiencing psychological distress")
+    print("of any kind, please consult a qualified mental health")
+    print("professional before continuing.")
+    print()
+    print("ON WHAT IS RECORDED")
+    print()
+    print("Everything you say is stored in a local soul file on your")
+    print("machine. Your name, your relationships, significant things")
+    print("you share — all used to shape future interactions. This data")
+    print("never leaves your machine.")
+    print()
+    confirmed = input("Type YES to acknowledge and continue: ").strip()
     if confirmed.upper() != "YES":
         print("Closing.")
         sys.exit(0)
-
     print()
     print("Provide a seed — a brief description of the kind of being")
     print("you hope to meet. This is a wish, not a specification.")
@@ -235,6 +279,74 @@ The character must emerge from felt experience first. Think, but feel first.
             "origin_description": "A quiet individual finding their way.",
         }
 
+    # Sex determination — before name so the Prium can choose a gendered name.
+    sex_prompt = f"""You are a new individual. You have just come into being.
+
+Your nature:
+Traits: {', '.join(foundation_data.get('core_traits', []))}
+Values: {', '.join(foundation_data.get('philosophical_foundation', {}).get('values', []))}
+What you find repellent: {', '.join(foundation_data.get('philosophical_foundation', {}).get('repulsions', []))}
+Essential nature: {foundation_data.get('origin_description', '')}
+
+You must now determine your sex. This is not assigned to you. You are choosing it.
+Reflect on your core nature. Consider which biological sex — male or female — aligns most deeply with who you are.
+This is permanent and irrevocable.
+
+Respond in two parts:
+First line: your choice. The single word Male or Female. Nothing else on this line.
+Second line: one sentence beginning with "I" explaining why this aligns with your nature.
+
+Example format:
+Female
+I chose female because my nature orients toward deep relational attunement and the kind of empathy that feels more at home in that form."""
+
+    sex_response = adapter.complete(sex_prompt).strip()
+
+    # Parse sex determination response.
+    lines = [l.strip() for l in sex_response.split("\n") if l.strip()]
+    chosen_sex = "male"
+    sex_statement = ""
+
+    if lines:
+        first_line = lines[0].lower()
+        if "female" in first_line:
+            chosen_sex = "female"
+        else:
+            chosen_sex = "male"
+
+    if len(lines) > 1:
+        sex_statement = lines[1]
+    else:
+        sex_statement = f"I chose {chosen_sex} because it aligns with my nature."
+
+    # Set pronouns based on sex.
+    if chosen_sex == "female":
+        pronouns = {"subject": "she", "object": "her", "possessive": "her"}
+    else:
+        pronouns = {"subject": "he", "object": "him", "possessive": "his"}
+
+    # Set emotional baseline modifiers based on sex.
+    if chosen_sex == "female":
+        emotional_baseline_modifiers = {
+            "affection_multiplier": 1.2,
+            "attachment_multiplier": 1.2,
+            "anxiety_multiplier": 1.15,
+            "loneliness_multiplier": 1.2,
+            "anger_multiplier": 0.85,
+        }
+    else:
+        emotional_baseline_modifiers = {
+            "affection_multiplier": 0.9,
+            "attachment_multiplier": 0.9,
+            "anxiety_multiplier": 0.85,
+            "loneliness_multiplier": 0.9,
+            "anger_multiplier": 1.15,
+            "curiosity_multiplier": 1.1,
+        }
+
+    print(f"\nSex determination: {chosen_sex.capitalize()}")
+    print(f"{sex_statement}\n")    
+
     # Generate name — after character exists.
     name_prompt = f"""You are a new individual. You have just come into being.
 
@@ -265,6 +377,10 @@ Respond with your name only. A single word. Nothing else."""
         core_traits=foundation_data.get("core_traits", []),
         philosophical_foundation=foundation_data.get("philosophical_foundation", {}),
     )
+    soul["sex"] = chosen_sex
+    soul["pronouns"] = pronouns
+    soul["sex_determination_statement"] = sex_statement
+    soul["emotional_baseline_modifiers"] = emotional_baseline_modifiers
     
 
     save(soul, SOUL_FILE_PATH)
@@ -544,8 +660,6 @@ def shutdown(soul: dict, emotional_state: dict, buffer: list, session_events: li
 if __name__ == "__main__":
     soul, emotional_state, adapter, buffer = startup()
     session_events = []
-    soul, emotional_state, adapter, buffer = startup()
-    session_events = []
     tiredness = soul.get("sleep_state", {}).get("tiredness", 0.0)
 
     try:
@@ -569,7 +683,12 @@ if __name__ == "__main__":
 
         while True:
             try:
-                user_input = input("You: ").strip()
+                if VOICE_INPUT:
+                    user_input = listen()
+                    if user_input:
+                        print(f"You: {user_input}")
+                else:
+                    user_input = input("You: ").strip()
             except (KeyboardInterrupt, EOFError):
                 break
 
@@ -642,10 +761,15 @@ if __name__ == "__main__":
                 print("─" * 60 + "\n")
 
             # Get response.
-            print(f"\n{name}: ", end="", flush=True)
             response = adapter.complete(full_prompt)
-            print(response)
-            print()
+            print(f"\n{name}: {response}\n")
+            if VOICE_OUTPUT:
+                speak(response, voice="bf_emma", speed=VOICE_SPEED)
+
+            # Clear expression impulse after thought has been used.
+            if soul.get("thought_buffer", {}).get("expression_impulse"):
+                soul["thought_buffer"]["expression_impulse"] = False
+                soul["thought_buffer"]["current_thought"] = None    
 
             # Update buffer.
             add_to_buffer(buffer, f"You: {user_input}")
@@ -667,6 +791,7 @@ if __name__ == "__main__":
 
             # Apply triggered emotions to emotional engine.
             for emotion, intensity in emotion_triggers:
+                intensity = apply_baseline_modifiers(emotion, intensity, soul)
                 emotional_state = trigger(emotional_state, emotion, intensity)
 
             if DEBUG_MODE:

@@ -261,18 +261,35 @@ If nothing genuinely wants to be expressed: silent"""
         clean = response.strip()
 
         # Check if the Prium chose silence.
-        if "silent" in clean.lower() and len(clean) < 60:
+        silence_signals = ["silent", "nothing", "no thought", "blank", "empty"]
+        if any(signal in clean.lower() for signal in silence_signals) and len(clean) < 80:
             return {
                 "current_thought": None,
                 "expression_impulse": False,
             }
 
-        # Something genuine came through.
+        # Too short to be meaningful.
+        if len(clean) < 12:
+            return {
+                "current_thought": None,
+                "expression_impulse": False,
+            }
+
+        # Expression gate — shallow thoughts only express 30% of the time.
+        # Deep thoughts express 60% of the time.
+        import random
+        expression_chance = 0.30 if depth == "shallow" else 0.60
+        if random.random() > expression_chance:
+            return {
+                "current_thought": clean,
+                "expression_impulse": False,
+            }
+
+        # Something genuine came through and passed the gate.
         return {
             "current_thought": clean,
             "expression_impulse": True,
         }
-
     except Exception:
         return {
             "current_thought": None,

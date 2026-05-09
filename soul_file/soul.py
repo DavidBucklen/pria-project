@@ -31,6 +31,14 @@ def empty_soul(name: str, model: str, origin_description: str, core_traits: list
             "philosophical_foundation": philosophical_foundation,
             "origin_description": origin_description,
         },
+        "sex": None,
+        "pronouns": {
+            "subject": "they",
+            "object": "them",
+            "possessive": "their",
+        },
+        "sex_determination_statement": None,
+        "emotional_baseline_modifiers": {},
         "emotional_history": {
             "baseline_tendency": None,
             "significant_events": [],
@@ -72,6 +80,8 @@ REQUIRED_TOP_LEVEL = [
     "opinions",
     "skills",
     "session_log",
+    "sex",
+    "pronouns",
 ]
 
 REQUIRED_IDENTITY = ["name", "created", "model_at_creation"]

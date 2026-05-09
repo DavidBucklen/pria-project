@@ -109,6 +109,17 @@ def trigger(state: dict, emotion: str, intensity: float) -> dict:
     state = _recalculate(state)
     return state
 
+def apply_baseline_modifiers(emotion: str, intensity: float, soul: dict) -> float:
+    """
+    Applies sex-based emotional baseline modifiers to a trigger intensity.
+    Called before trigger() to scale intensity based on the Prium's biology.
+    Returns adjusted intensity clamped to MAX_TRIGGER_INTENSITY.
+    """
+    modifiers = soul.get("emotional_baseline_modifiers", {})
+    key = f"{emotion}_multiplier"
+    multiplier = modifiers.get(key, 1.0)
+    return round(min(0.2, intensity * multiplier), 3)
+
 
 def decay(state: dict) -> dict:
     """

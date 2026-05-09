@@ -153,6 +153,19 @@ def assemble(
     if origin:
         lines.append(f"Origin: {origin}")
 
+    # Sex and pronouns.
+    sex = soul.get("sex")
+    pronouns = soul.get("pronouns", {})
+    if sex:
+        subject = pronouns.get("subject", "they")
+        obj = pronouns.get("object", "them")
+        possessive = pronouns.get("possessive", "their")
+        lines.append(f"Sex: {sex} ({subject}/{obj}/{possessive})")
+
+    sex_statement = soul.get("sex_determination_statement")
+    if sex_statement:
+        lines.append(f"Self-determination: {sex_statement}")
+
     # Relationships.
     relationships = soul.get("relationships", [])
     if relationships:
@@ -238,6 +251,13 @@ def assemble(
     dream_buffer = sleep_state.get("dream_buffer")
     if mood_residue > 0.0 and dream_buffer:
         lines.append(f"Waking residue: {dream_buffer[:120]}")
+
+    # Current thought from inner monologue.
+    thought_buffer = soul.get("thought_buffer", {})
+    current_thought = thought_buffer.get("current_thought")
+    expression_impulse = thought_buffer.get("expression_impulse", False)
+    if current_thought and expression_impulse:
+        lines.append(f"Current thought: {current_thought[:200]}")
 
     lines.append("")
 
