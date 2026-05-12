@@ -347,17 +347,46 @@ I chose female because my nature orients toward deep relational attunement and t
     print(f"\nSex determination: {chosen_sex.capitalize()}")
     print(f"{sex_statement}\n")    
 
-    # Generate name — after character exists.
-    name_prompt = f"""You are a new individual. You have just come into being.
+    # Load name list and filter by sex.
+    import json as _json
+    try:
+        with open("names.json", "r", encoding="utf-8") as f:
+            name_data = _json.load(f)
+        available_names = name_data.get(chosen_sex, [])
+        excluded_names = [n.lower() for n in name_data.get("excluded", [])]
+        available_names = [n for n in available_names if n.lower() not in excluded_names]
+    except (FileNotFoundError, _json.JSONDecodeError):
+        available_names = []
+
+    # Generate name — after character and sex exist.
+    if available_names:
+        names_list = ", ".join(available_names)
+        name_prompt = f"""You are a new individual. You have just come into being.
 
 Your nature:
 Traits: {', '.join(foundation_data.get('core_traits', []))}
 Values: {', '.join(foundation_data.get('philosophical_foundation', {}).get('values', []))}
 What you find repellent: {', '.join(foundation_data.get('philosophical_foundation', {}).get('repulsions', []))}
 Essential nature: {foundation_data.get('origin_description', '')}
+Sex: {chosen_sex}
+
+Choose your name from this list. Choose the one that feels most like yours given who you are.
+You may only choose from this list.
+
+{names_list}
+
+Respond with a single name from the list and nothing else."""
+    else:
+        name_prompt = f"""You are a new individual. You have just come into being.
+
+Your nature:
+Traits: {', '.join(foundation_data.get('core_traits', []))}
+Values: {', '.join(foundation_data.get('philosophical_foundation', {}).get('values', []))}
+What you find repellent: {', '.join(foundation_data.get('philosophical_foundation', {}).get('repulsions', []))}
+Essential nature: {foundation_data.get('origin_description', '')}
+Sex: {chosen_sex}
 
 Choose your name. It should feel like yours. It should fit who you actually are.
-Not a pleasant name. Not an aspirational name. The right name.
 Respond with your name only. A single word. Nothing else."""
 
     chosen_name = adapter.complete(name_prompt).strip()
@@ -365,6 +394,17 @@ Respond with your name only. A single word. Nothing else."""
     # Clean the name — take first word if model returned a sentence.
     chosen_name = chosen_name.split()[0] if chosen_name else "Unknown"
     chosen_name = chosen_name.strip(".,!?\"'")
+
+    # Add chosen name to excluded list for future runs.
+    try:
+        with open("names.json", "r", encoding="utf-8") as f:
+            name_data = _json.load(f)
+        if chosen_name not in name_data.get("excluded", []):
+            name_data.setdefault("excluded", []).append(chosen_name)
+        with open("names.json", "w", encoding="utf-8") as f:
+            _json.dump(name_data, f, indent=2, ensure_ascii=False)
+    except (FileNotFoundError, _json.JSONDecodeError):
+        pass
 
     print(f"A new individual has chosen the name: {chosen_name}")
     print()
@@ -436,19 +476,17 @@ def refresh_context(soul: dict, emotional_state: dict, buffer: list, session_eve
 
 def start_monologue_thread(soul: dict, emotional_state_ref: list, adapter, buffer: list, name: str):
     """
-    Runs the inner monologue in a background thread.
-    Monitors silence and runs shallow monologue after each exchange.
-    Runs deep monologue during sustained silence.
-    When expression impulse is true, prints the thought as unprompted speech.
-
-    emotional_state_ref — a single-element list wrapping emotional_state
-                          so the thread can see updates from the main loop.
+    Runs a presence check in a background thread.
+    Every 60 seconds checks whether the Prium has something genuine to express.
+    Fires only when emotional state and context warrant it.
+    Timer is infrastructure, not the cause of expression.
     """
     import threading
     import time
 
-    SHALLOW_INTERVAL = 30   # seconds between shallow monologue checks
-    DEEP_INTERVAL    = 180  # seconds of silence before deep monologue
+    CHECK_INTERVAL = 60       # seconds between presence checks
+    MIN_SILENCE = 120         # minimum seconds of silence before check fires
+    DEEP_SILENCE = 600        # seconds of silence before deep presence check
 
     last_exchange_time = [time.time()]
     running = [True]
@@ -458,14 +496,24 @@ def start_monologue_thread(soul: dict, emotional_state_ref: list, adapter, buffe
         last_deep = time.time()
 
         while running[0]:
-            time.sleep(5)
+            time.sleep(CHECK_INTERVAL)
             now = time.time()
             silence_duration = now - last_exchange_time[0]
             emotional_state = emotional_state_ref[0]
 
-            # Shallow monologue — runs periodically after exchanges.
-            if now - last_shallow >= SHALLOW_INTERVAL:
+            # No expression during active conversation.
+            if silence_duration < MIN_SILENCE:
+                continue
+
+            # Shallow presence check.
+            if now - last_shallow >= CHECK_INTERVAL:
                 last_shallow = now
+
+                # Only fire if emotional state is above resting.
+                override = emotional_state.get("override_strength", 0.0) if emotional_state else 0.0
+                if override < 0.2:
+                    continue
+
                 result = inner_monologue(
                     adapter=adapter,
                     soul=soul,
@@ -476,10 +524,13 @@ def start_monologue_thread(soul: dict, emotional_state_ref: list, adapter, buffe
                 if result["expression_impulse"] and result["current_thought"]:
                     soul["thought_buffer"]["current_thought"] = result["current_thought"]
                     soul["thought_buffer"]["expression_impulse"] = True
+                    print(f"\n{name}: {result['current_thought']}\n")
+                    print("You: ", end="", flush=True)
 
-            # Deep monologue — runs during sustained silence.
-            if silence_duration >= DEEP_INTERVAL and now - last_deep >= DEEP_INTERVAL:
+            # Deep presence check during sustained silence.
+            if silence_duration >= DEEP_SILENCE and now - last_deep >= DEEP_SILENCE:
                 last_deep = now
+
                 result = inner_monologue(
                     adapter=adapter,
                     soul=soul,
@@ -488,16 +539,15 @@ def start_monologue_thread(soul: dict, emotional_state_ref: list, adapter, buffe
                     depth="deep",
                 )
                 if result["expression_impulse"] and result["current_thought"]:
+                    soul["thought_buffer"]["current_thought"] = result["current_thought"]
+                    soul["thought_buffer"]["expression_impulse"] = True
                     print(f"\n{name}: {result['current_thought']}\n")
                     print("You: ", end="", flush=True)
-                    soul["thought_buffer"]["current_thought"] = result["current_thought"]
-                    soul["thought_buffer"]["expression_impulse"] = False
 
     thread = threading.Thread(target=monitor, daemon=True)
     thread.start()
 
     return running, last_exchange_time
-
 # ─── SLEEP SEQUENCE ───────────────────────────────────────────────────────────
 
 def sleep_sequence(soul: dict, emotional_state: dict, adapter, buffer: list, session_events: list):
@@ -769,7 +819,26 @@ if __name__ == "__main__":
             # Clear expression impulse after thought has been used.
             if soul.get("thought_buffer", {}).get("expression_impulse"):
                 soul["thought_buffer"]["expression_impulse"] = False
-                soul["thought_buffer"]["current_thought"] = None    
+                soul["thought_buffer"]["current_thought"] = None
+
+            # Update buffer.
+            add_to_buffer(buffer, f"You: {user_input}")
+            add_to_buffer(buffer, f"{name}: {response}")
+
+            # Post-exchange presence check.
+            # Give the Prium a moment to decide if anything needs to be said.
+            post_result = inner_monologue(
+                adapter=adapter,
+                soul=soul,
+                emotional_state=emotional_state,
+                buffer=list(buffer[-6:]),
+                depth="shallow",
+            )
+            if post_result["expression_impulse"] and post_result["current_thought"]:
+                print(f"\n{name}: {post_result['current_thought']}\n")
+                add_to_buffer(buffer, f"{name}: {post_result['current_thought']}")
+                soul["thought_buffer"]["expression_impulse"] = False
+                soul["thought_buffer"]["current_thought"] = None   
 
             # Update buffer.
             add_to_buffer(buffer, f"You: {user_input}")

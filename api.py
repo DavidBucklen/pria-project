@@ -90,7 +90,11 @@ def initialize():
 
     print(f"API ready. {name} is listening.")
     print(f"Tiredness restored: {tiredness:.2f}")
-    print(f"Connect from your phone at http://<your-local-ip>:5000\n")
+    import socket
+    local_ip = socket.gethostbyname(socket.gethostname())
+    print(f"Local network: http://{local_ip}:5000")
+    print(f"Tailscale:     Run 'tailscale ip' to get your Tailscale address")
+    print(f"Port:          5000\n")
 
     # Start inner monologue background thread.
     start_api_monologue_thread()
@@ -100,18 +104,22 @@ def initialize():
 
 def start_api_monologue_thread():
     """
-    Runs the inner monologue in a background thread for API mode.
-    Stores autonomous speech in state for delivery on next request.
+    Runs a presence check in a background thread.
+    Every 60 seconds checks whether the Prium has something genuine to express.
+    Fires only when emotional state and context warrant it.
+    Timer is infrastructure, not the cause of expression.
     """
-    SHALLOW_INTERVAL = 30
-    DEEP_INTERVAL = 180
+    CHECK_INTERVAL = 60       # seconds between presence checks
+    MIN_SILENCE = 120         # minimum seconds of silence before check fires
+    DEEP_SILENCE = 600        # seconds of silence before deep presence check
 
     def monitor():
+        print("[MONOLOGUE] Presence check thread started.", flush=True)
         last_shallow = time.time()
         last_deep = time.time()
 
         while state["ready"]:
-            time.sleep(5)
+            time.sleep(CHECK_INTERVAL)
             now = time.time()
 
             with state_lock:
@@ -123,9 +131,18 @@ def start_api_monologue_thread():
 
             silence_duration = now - last_exchange
 
-            # Shallow monologue — only fires if there has been at least one exchange.
-            if now - last_shallow >= SHALLOW_INTERVAL and state["last_exchange_time"] and (now - state["last_exchange_time"]) >= 60:
+            # No expression during active conversation.
+            if silence_duration < MIN_SILENCE:
+                continue
+
+            # Shallow presence check.
+            if now - last_shallow >= CHECK_INTERVAL:
                 last_shallow = now
+                override = emotional_state.get("override_strength", 0.0) if emotional_state else 0.0
+                if override < 0.2:
+                    print(f"[MONOLOGUE] Shallow check skipped. Override too low: {override:.2f}", flush=True)
+                    continue
+
                 result = inner_monologue(
                     adapter=adapter,
                     soul=soul,
@@ -139,9 +156,11 @@ def start_api_monologue_thread():
                         soul["thought_buffer"]["expression_impulse"] = True
                     autonomous_speech_queue.put(result["current_thought"])
 
-            # Deep monologue during sustained silence.
-            if silence_duration >= DEEP_INTERVAL and now - last_deep >= DEEP_INTERVAL:
+            # Deep presence check during sustained silence.
+            if silence_duration >= DEEP_SILENCE and now - last_deep >= DEEP_SILENCE:
+                print(f"[MONOLOGUE] Deep presence check firing. Silence: {silence_duration:.0f}s Override: {override:.2f}", flush=True)
                 last_deep = now
+
                 result = inner_monologue(
                     adapter=adapter,
                     soul=soul,
@@ -155,7 +174,13 @@ def start_api_monologue_thread():
                         soul["thought_buffer"]["expression_impulse"] = True
                     autonomous_speech_queue.put(result["current_thought"])
 
-    thread = threading.Thread(target=monitor, daemon=True)
+    def safe_monitor():
+        try:
+            monitor()
+        except Exception as e:
+            print(f"[MONOLOGUE] Thread crashed: {e}")
+
+    thread = threading.Thread(target=safe_monitor, daemon=True)
     thread.start()
 
 
@@ -270,6 +295,7 @@ def chat():
         return jsonify({"error": "No message provided"}), 400
 
     user_input = data["message"].strip()
+    companion_name = data.get("companion_name", "Companion").strip() or "Companion"
     if not user_input:
         return jsonify({"error": "Empty message"}), 400
 
@@ -339,8 +365,23 @@ def chat():
             soul["thought_buffer"]["current_thought"] = None
 
         # Update buffer.
-        add_to_buffer(buffer, f"Chris: {user_input}")
+        add_to_buffer(buffer, f"{companion_name}: {user_input}")
         add_to_buffer(buffer, f"{name}: {response}")
+
+        # Post-exchange presence check.
+        # Give the Prium a moment to decide if anything needs to be said.
+        post_result = inner_monologue(
+            adapter=adapter,
+            soul=soul,
+            emotional_state=state["emotional_state"],
+            buffer=list(buffer[-6:]),
+            depth="shallow",
+        )
+        if post_result["expression_impulse"] and post_result["current_thought"]:
+            add_to_buffer(buffer, f"{name}: {post_result['current_thought']}")
+            soul["thought_buffer"]["expression_impulse"] = False
+            soul["thought_buffer"]["current_thought"] = None
+            autonomous_speech_queue.put(post_result["current_thought"])
 
         # Update last exchange time.
         state["last_exchange_time"] = time.time()
@@ -424,7 +465,7 @@ def chat():
         override = state["emotional_state"].get("override_strength", 0.0)
 
         state["session_events"].append({
-            "description": f"{name}'s companion said: {user_input[:80]} | {name} replied: {response[:80]}",
+            "description": f"{companion_name} said: {user_input[:80]} | {name} replied: {response[:80]}",
             "identity_shaping": False,
             "first_occurrence": len(state["session_events"]) == 1,
             "relationship_change": False,

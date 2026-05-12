@@ -58,6 +58,11 @@ def empty_soul(name: str, model: str, origin_description: str, core_traits: list
             "thought_timestamp": None,
             "expression_impulse": False,
         },
+        "cognitive_state": {
+            "last_cognitive_event": None,
+            "refractory_until": None,
+            "suppressed_impulses": [],
+        },
         "relationships": [],
         "long_term_memories": [],
         "people": [],
@@ -82,6 +87,7 @@ REQUIRED_TOP_LEVEL = [
     "session_log",
     "sex",
     "pronouns",
+    "cognitive_state",
 ]
 
 REQUIRED_IDENTITY = ["name", "created", "model_at_creation"]
