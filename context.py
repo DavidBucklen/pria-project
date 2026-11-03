@@ -193,7 +193,13 @@ def assemble(
     if selected_memories:
         lines.append("Memories:")
         for memory in selected_memories[:15]:
-            presented = apply_sharpness(memory)
+            first_person = memory.get("first_person_account")
+            if first_person:
+                # Consolidated memory — present in her own voice.
+                presented = first_person
+            else:
+                # Not yet consolidated — fall back to sharpness-adjusted description.
+                presented = apply_sharpness(memory)
             anchor_marker = " [core]" if memory.get("anchor") else ""
             lines.append(f"  {presented}{anchor_marker}")
 

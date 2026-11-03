@@ -15,7 +15,7 @@ from adapters.base import BaseAdapter
 
 DEFAULT_HOST = "http://localhost:11434"
 DEFAULT_MODEL = "llama3"
-REQUEST_TIMEOUT = 120  # seconds
+REQUEST_TIMEOUT = 300  # seconds — increased for larger models like Qwen
 
 # Supported image formats for vision models.
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
@@ -36,13 +36,18 @@ class OllamaAdapter(BaseAdapter):
         self._model = model
         self._host = host.rstrip("/")
 
-    def complete(self, prompt: str, images: list = None) -> str:
+    def complete(self, prompt: str, images: list = None, options: dict = None) -> str:
         """
         Sends a prompt to Ollama and returns the completion as a string.
         Uses the /api/generate endpoint with streaming disabled.
 
-        images — optional list of base64-encoded image strings.
-                 Only used with vision-capable models like Gemma 4.
+        images  — optional list of base64-encoded image strings.
+                  Only used with vision-capable models like Gemma 4.
+        options — optional dict of Ollama generation parameters
+                  (temperature, top_p, top_k, repeat_penalty, num_predict).
+                  When provided, merged into the request payload under "options".
+                  Used by the emotional modulation system for the main response
+                  call only. All other calls leave this as None (default behavior).
         """
         url = f"{self._host}/api/generate"
 
@@ -55,6 +60,13 @@ class OllamaAdapter(BaseAdapter):
         # Add images if provided and model supports vision.
         if images:
             payload_dict["images"] = images
+
+        # Add generation options if provided (emotional modulation).
+        if options:
+            # Filter out num_predict = -1 (Ollama default — no need to send).
+            filtered = {k: v for k, v in options.items() if not (k == "num_predict" and v == -1)}
+            if filtered:
+                payload_dict["options"] = filtered
 
         payload = json.dumps(payload_dict).encode("utf-8")
 

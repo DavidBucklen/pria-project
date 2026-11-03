@@ -20,6 +20,7 @@ from emotional_engine.engine import (
     apply_baseline_modifiers,
 )
 from emotional_engine.evaluator import evaluate_exchange, detect_people, inner_monologue
+from emotional_engine.modulation import get_generation_params
 from memory_filter.filter import filter_buffer
 from context import assemble, build_system_prompt, create_buffer, add_to_buffer, _extract_sensory_cues, _extract_topic_cues
 from adapters.ollama import OllamaAdapter
@@ -218,12 +219,18 @@ def status():
         return jsonify({
             "ready": True,
             "name": state["name"],
+            "sex": soul.get("sex"),
             "primary_emotion": emotional.get("primary_emotion"),
             "primary_intensity": emotional.get("primary_intensity", 0.0),
             "secondary_emotion": emotional.get("secondary_emotion"),
+            "secondary_intensity": emotional.get("secondary_intensity", 0.0),
             "override_strength": emotional.get("override_strength", 0.0),
+            "active_intensities": emotional.get("intensities", {}),
             "tiredness": tiredness,
             "tiredness_tier": get_tiredness_tier(tiredness),
+            "refractory_until": soul.get("cognitive_state", {}).get("refractory_until"),
+            "dream_buffer": soul.get("sleep_state", {}).get("dream_buffer"),
+            "mood_residue": soul.get("sleep_state", {}).get("mood_residue", 0.0),
             "autonomous_message": autonomous_message,
         })
     
@@ -298,7 +305,7 @@ def chat():
     companion_name = data.get("companion_name", "Companion").strip() or "Companion"
     if not user_input:
         return jsonify({"error": "Empty message"}), 400
-
+             
     with state_lock:
         if not state["ready"]:
             return jsonify({"error": "Prium not ready"}), 503
@@ -356,8 +363,17 @@ def chat():
         # Build full prompt.
         full_prompt = f"{system_prompt}\n\n{context_block}"
 
+        # Get generation parameters scaled to current emotional state.
+        gen_params = get_generation_params(
+            primary_emotion=state["emotional_state"].get("primary_emotion"),
+            primary_intensity=state["emotional_state"].get("primary_intensity", 0.0),
+            secondary_emotion=state["emotional_state"].get("secondary_emotion"),
+            secondary_intensity=state["emotional_state"].get("secondary_intensity", 0.0),
+            override_strength=state["emotional_state"].get("override_strength", 0.0),
+        )
+
         # Get response.
-        response = adapter.complete(full_prompt)
+        response = adapter.complete(full_prompt, options=gen_params)
 
         # Clear expression impulse after thought has been used.
         if soul.get("thought_buffer", {}).get("expression_impulse"):
@@ -395,12 +411,13 @@ def chat():
             current_emotional_state=state["emotional_state"],
         )
 
-        # Apply triggers.
+                # Apply triggers.
         for emotion, intensity in emotion_triggers:
             intensity = apply_baseline_modifiers(emotion, intensity, soul)
             state["emotional_state"] = trigger(
                 state["emotional_state"], emotion, intensity
             )
+
 
         # Detect people mentioned.
         detected_people = detect_people(

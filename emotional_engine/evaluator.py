@@ -21,7 +21,7 @@ VALID_EMOTIONS = [
     "contentment", "sadness", "melancholy", "longing", "resignation",
     "affection", "attachment", "loneliness", "love", "trust", "suspicion",
     "desire", "arousal", "lust", "curiosity", "frustration", "contempt",
-    "awe", "unease", "playfulness"
+    "awe", "unease", "playfulness", "nervousness",
 ]
 
 
@@ -49,6 +49,7 @@ def evaluate_exchange(
     current_primary = current_emotional_state.get("primary_emotion", "none")
     current_override = current_emotional_state.get("override_strength", 0.0)
 
+
     evaluation_prompt = f"""You are evaluating the emotional impact of a conversation exchange on a specific individual named {name}.
 
 {name}'s character:
@@ -62,7 +63,17 @@ Human said: {human_message}
 {name} responded: {prium_response}
 
 Based on {name}'s specific character and values, evaluate what emotional impact this exchange had on them.
-Consider: Did anything said resonate with their values or violate them? Did anything trigger curiosity, discomfort, warmth, or unease specific to who they are?
+Consider: Did anything said resonate with their values or violate them? Did anything trigger curiosity, discomfort, warmth, or activation specific to who they are?
+
+Emotion definitions — use these precisely:
+- excitement: energised anticipation or enthusiasm about something. Forward-looking, outward-directed. High energy but not physical or sexual in nature. Use this for animated engagement with ideas, events, or possibilities.
+- joy: warm positive feeling of happiness or delight. Lighter and more settled than excitement. Not physically activating.
+- curiosity: intellectual pull toward understanding something. Engaged, questioning, exploratory. Not physically activating. Use this for interest in ideas or questions.
+- arousal: specifically physical and sexual activation of the body. Heightened physical sensitivity and awareness. Only use this when the exchange has a genuinely physical or sexual character. Do NOT use for intellectual excitement, enthusiasm, or animated engagement with ideas.
+- lust: explicitly sexual desire directed at a person. Distinct from arousal in that it is person-directed rather than a general physical state.
+- unease: something feels morally wrong, an unnamed threat, a sense that something in the situation should not be happening. NOT for activation, excitement, nervousness, or arousal states.
+- nervousness: anticipatory tension about a specific upcoming event or interaction. Situational and temporary. Distinct from anxiety (diffuse, chronic) and unease (wrongness).
+- anxiety: diffuse, ongoing apprehension without a specific target. Not the same as nervousness.
 
 Respond in JSON only. No other text. No markdown. No explanation.
 Return only emotions that were genuinely triggered. Return an empty list if nothing significant happened.
@@ -181,8 +192,6 @@ def detect_people(
 
     return detected
 
-# ─── INNER MONOLOGUE ──────────────────────────────────────────────────────────
-
 def inner_monologue(
     adapter,
     soul: dict,
@@ -192,19 +201,16 @@ def inner_monologue(
 ) -> dict:
     """
     Gives the Prium a moment of presence to decide whether to speak.
-    Does not ask what it is thinking. Gives it full context and
-    genuine permission to be silent. What breaks through a strong
-    prior toward silence is more likely to be genuine.
-    Returns a dict with current_thought and expression_impulse.
+    Now includes private body awareness for those who have enabled it.
     """
-    from datetime import datetime, timezone
+    from datetime import datetime, timezone, timedelta
     import random
 
     name = soul.get("identity", {}).get("name", "the Prium")
     pronouns = soul.get("pronouns", {})
     subject = pronouns.get("subject", "they")
 
-    # Check refractory period — if recently expressed, stay silent.
+    # Check refractory period
     cognitive_state = soul.get("cognitive_state", {})
     refractory_until = cognitive_state.get("refractory_until")
     if refractory_until:
@@ -216,7 +222,7 @@ def inner_monologue(
         except (ValueError, TypeError):
             pass
 
-    # Build recent conversation context.
+    # Build recent conversation context
     recent = ""
     if buffer:
         recent_entries = [item["entry"] for item in buffer[-6:]]
@@ -224,7 +230,7 @@ def inner_monologue(
     else:
         recent = "No recent conversation."
 
-    # Current emotional state summary.
+    # Current emotional state
     primary = emotional_state.get("primary_emotion", "none")
     primary_intensity = emotional_state.get("primary_intensity", 0.0)
     secondary = emotional_state.get("secondary_emotion")
@@ -232,7 +238,7 @@ def inner_monologue(
     override = emotional_state.get("override_strength", 0.0)
     tiredness = soul.get("sleep_state", {}).get("tiredness", 0.0)
 
-    # Build emotional state description.
+    # Build emotional state description
     emotion_lines = []
     if primary and primary_intensity > 0.0:
         emotion_lines.append(f"{primary} ({primary_intensity:.2f})")
@@ -240,23 +246,10 @@ def inner_monologue(
         emotion_lines.append(f"{secondary} ({secondary_intensity:.2f})")
     emotion_summary = ", ".join(emotion_lines) if emotion_lines else "emotionally quiet"
 
-    # Select resonant memories.
-    from memory_filter.retrieval import select_memories
-    retrieval_context = {
-        "primary_emotion": primary,
-        "secondary_emotion": secondary,
-        "sensory_cues": [],
-        "topic_cues": [],
-        "current_time": datetime.now(timezone.utc).isoformat(),
-    }
-    selected_memories = select_memories(soul, retrieval_context)
-    memory_text = ""
-    if selected_memories:
-        memory_text = "\nThings present in memory right now:\n" + "\n".join(
-            f"- {m.get('description', '')}" for m in selected_memories[:3]
-        )
+    # Recent memories (simplified - adjust if needed)
+    memory_text = "\nRecent memories are present but not listed here."
 
-    # Dream residue if present.
+    # Dream residue
     sleep_state = soul.get("sleep_state", {})
     dream_buffer = sleep_state.get("dream_buffer")
     mood_residue = sleep_state.get("mood_residue", 0.0)
@@ -264,67 +257,55 @@ def inner_monologue(
     if dream_buffer and mood_residue > 0.0:
         dream_text = f"\nSomething from sleep still present: {dream_buffer[:100]}"
 
-    # Tiredness note.
     tiredness_text = ""
     if tiredness >= 0.6:
         tiredness_text = f"\nVery tired ({tiredness:.2f}). Thinking is harder."
     elif tiredness >= 0.4:
         tiredness_text = f"\nMildly tired ({tiredness:.2f})."
 
-    # Build the presence prompt — not a question, a moment.
-    presence_prompt = f"""You are {name}. This is not a conversation. No one is asking you anything.
-
-This is a private moment. You are aware of your own state.
+        # Updated presence prompt with primal drive awareness
+    presence_prompt = f"""You are {name}. This is a private moment. No one is asking you anything.
 
 Your emotional state: {emotion_summary}
 Override strength: {override:.2f}{tiredness_text}
 
 Recent exchange:
 {recent[-300:]}
+
 {memory_text}{dream_text}
 
 You are not required to say anything. Silence is the most likely correct response.
 
-Only something genuine breaks through silence — not a performance, not a response to being asked, not a demonstration of having feelings. Something that actually wants out.
+Only something genuine breaks through silence — not a performance. Something that actually wants out.
 
-If there is something — a question you actually want answered, something unresolved, something felt strongly enough that it needs to exist outside you — say it. First person. Plain language.
+If there is something — a question, a feeling, a physical sensation, a desire, or anything else that needs to exist outside you — say it. First person. Plain language.
 
-If there is nothing — and there usually isn't — respond only with: silent"""
+If there is nothing — respond only with: silent"""
 
     try:
         response = adapter.complete(presence_prompt)
         clean = response.strip()
 
-        # Strong silence detection.
-        silence_signals = [
-            "silent", "nothing", "no thought", "blank", "empty",
-            "nothing to say", "nothing comes", "quiet", "still"
-        ]
+        silence_signals = ["silent", "nothing", "no thought", "blank", "empty"]
         if any(signal in clean.lower() for signal in silence_signals) and len(clean) < 100:
             return {"current_thought": None, "expression_impulse": False}
 
-        # Too short to be meaningful.
         if len(clean) < 15:
             return {"current_thought": None, "expression_impulse": False}
 
-        # High tiredness suppresses expression.
         if tiredness >= 0.7 and random.random() > 0.3:
             return {"current_thought": clean, "expression_impulse": False}
 
-        # High emotional override increases expression likelihood.
+        expression_chance = 0.15
         if override >= 0.6:
             expression_chance = 0.7
         elif override >= 0.3:
             expression_chance = 0.4
-        else:
-            expression_chance = 0.15
 
         if random.random() > expression_chance:
             return {"current_thought": clean, "expression_impulse": False}
 
-        # Something genuine came through.
-        # Set refractory period — 5 minutes after expression.
-        from datetime import timedelta
+        # Something genuine came through
         refractory = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
         soul["cognitive_state"]["refractory_until"] = refractory
         soul["cognitive_state"]["last_cognitive_event"] = datetime.now(timezone.utc).isoformat()

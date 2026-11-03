@@ -231,3 +231,7 @@ test_voices.py
 
 # README forced include
 !README.md
+
+# Private files - never commit
+private_physiology.py
+primal_drive.py

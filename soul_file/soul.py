@@ -239,6 +239,8 @@ def write_memory(
         "triggers": [],
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "immediate_write": immediate,
+        "consolidated": False,
+        "first_person_account": None,
     })
 
 

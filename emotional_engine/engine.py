@@ -18,6 +18,7 @@ EMOTIONS = [
     "desire", "arousal", "lust",
     # Cognitive / complex
     "curiosity", "frustration", "contempt", "awe", "unease", "playfulness",
+    "nervousness",
 ]
 
 # Decay rates per update cycle.
@@ -56,6 +57,8 @@ DECAY_RATES = {
     "suspicion":   0.03,
     "awe":         0.07,
     "unease":      0.06,
+    # Nervousness — anticipatory/situational, fades once moment passes
+    "nervousness": 0.08,
 }
 
 # Override strength thresholds and their behavioral tiers.

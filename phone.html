@@ -23,6 +23,14 @@
     background: #0d0d1a;
     border-bottom: 1px solid #1a1a2e;
     flex-shrink: 0;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  #header-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
   }
 
   #prium-name {
@@ -30,6 +38,23 @@
     font-weight: 600;
     color: #e8e8f0;
     letter-spacing: 0.02em;
+  }
+
+  #drawer-toggle {
+    font-size: 13px;
+    color: #4a4a6a;
+    padding: 4px 8px;
+    border: 1px solid #2a2a4a;
+    border-radius: 8px;
+    background: transparent;
+    cursor: pointer;
+    transition: all 0.2s;
+    flex-shrink: 0;
+  }
+
+  #drawer-toggle:active {
+    background: #1a1a2e;
+    color: #e8e8f0;
   }
 
   #emotional-state {
@@ -139,146 +164,194 @@
     transition: border-color 0.2s;
   }
 
-  #message-input:focus {
-    border-color: #0f3460;
-  }
-
-  #message-input::placeholder {
-    color: #4a4a6a;
-  }
+  #message-input:focus { border-color: #0f3460; }
+  #message-input::placeholder { color: #4a4a6a; }
 
   #send-btn {
-    width: 42px;
-    height: 42px;
-    background: #e94560;
-    border: none;
-    border-radius: 50%;
-    color: white;
-    font-size: 18px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    transition: background 0.2s, transform 0.1s;
+    width: 42px; height: 42px;
+    background: #e94560; border: none; border-radius: 50%;
+    color: white; font-size: 18px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; transition: background 0.2s, transform 0.1s;
   }
+  #send-btn:active { background: #c73850; transform: scale(0.95); }
+  #send-btn:disabled { background: #2a2a4a; cursor: not-allowed; }
 
-  #send-btn:active {
-    background: #c73850;
-    transform: scale(0.95);
+  #refresh-btn, #sleep-btn, #voice-btn, #mic-btn {
+    width: 42px; height: 42px;
+    background: #1a1a2e; border: 1px solid #2a2a4a; border-radius: 50%;
+    color: #4a4a6a; font-size: 16px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; transition: all 0.2s;
   }
-
-  #send-btn:disabled {
-    background: #2a2a4a;
-    cursor: not-allowed;
-  }
-
-  #refresh-btn {
-    width: 42px;
-    height: 42px;
-    background: #1a1a2e;
-    border: 1px solid #2a2a4a;
-    border-radius: 50%;
-    color: #4a4a6a;
-    font-size: 16px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    transition: all 0.2s;
-  }
-
-  #refresh-btn:active {
-    background: #0f3460;
-    color: #e8e8f0;
-  }
-
-  #mic-btn {
-    width: 42px;
-    height: 42px;
-    background: #1a1a2e;
-    border: 1px solid #2a2a4a;
-    border-radius: 50%;
-    color: #4a4a6a;
-    font-size: 18px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    transition: all 0.2s;
-  }
-
-  #mic-btn.listening {
-    background: #e94560;
-    border-color: #e94560;
-    color: white;
-  }
-
-  #sleep-btn {
-    width: 42px;
-    height: 42px;
-    background: #1a1a2e;
-    border: 1px solid #2a2a4a;
-    border-radius: 50%;
-    color: #4a4a6a;
-    font-size: 18px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    transition: all 0.2s;
-  }
-
-  #sleep-btn:active {
-    background: #0f3460;
-    color: #e8e8f0;
-  }
-
-  #voice-btn {
-    width: 42px;
-    height: 42px;
-    background: #1a1a2e;
-    border: 1px solid #2a2a4a;
-    border-radius: 50%;
-    color: #4a4a6a;
-    font-size: 18px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    transition: all 0.2s;
-  }
-
-  #voice-btn.active {
-    background: #0f3460;
-    border-color: #0f3460;
-    color: #e8e8f0;
-  }
+  #mic-btn { font-size: 18px; }
+  #refresh-btn:active, #sleep-btn:active { background: #0f3460; color: #e8e8f0; }
+  #mic-btn.listening { background: #e94560; border-color: #e94560; color: white; }
+  #voice-btn.active { background: #0f3460; border-color: #0f3460; color: #e8e8f0; }
 
   .emotion-bar {
-    height: 2px;
-    background: #1a1a2e;
-    position: relative;
-    overflow: hidden;
-    margin-top: 6px;
-    border-radius: 1px;
+    height: 2px; background: #1a1a2e;
+    position: relative; overflow: hidden;
+    margin-top: 6px; border-radius: 1px;
+  }
+  .emotion-fill {
+    height: 100%; background: #e94560; border-radius: 1px;
+    transition: width 0.8s ease; width: 0%;
   }
 
-  .emotion-fill {
-    height: 100%;
-    background: #e94560;
-    border-radius: 1px;
-    transition: width 0.8s ease;
-    width: 0%;
+  /* ── DRAWER ─────────────────────────────────────────────────── */
+
+  #drawer-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 100;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.25s ease;
+  }
+
+  #drawer-overlay.open {
+    opacity: 1; pointer-events: all;
+  }
+
+  #drawer {
+    position: fixed; top: 0; right: 0;
+    width: 300px; max-width: 85vw;
+    height: 100dvh;
+    background: #0d0d1a;
+    border-left: 1px solid #1a1a2e;
+    z-index: 101;
+    transform: translateX(100%);
+    transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+
+  #drawer.open {
+    transform: translateX(0);
+  }
+
+  #drawer-header {
+    padding: 20px 16px 14px;
+    border-bottom: 1px solid #1a1a2e;
+    flex-shrink: 0;
+  }
+
+  #drawer-name {
+    font-size: 17px; font-weight: 600; color: #e8e8f0;
+  }
+
+  #drawer-sex {
+    font-size: 11px; color: #4a4a6a; margin-top: 2px;
+    text-transform: uppercase; letter-spacing: 0.08em;
+  }
+
+  #drawer-body {
+    flex: 1; overflow-y: auto; padding: 14px 16px 24px;
+  }
+
+  .drawer-section {
+    margin-bottom: 20px;
+  }
+
+  .drawer-section-title {
+    font-size: 10px; color: #4a4a6a;
+    text-transform: uppercase; letter-spacing: 0.10em;
+    margin-bottom: 10px;
+  }
+
+  .override-bar-wrap {
+    margin-bottom: 4px;
+  }
+
+  .override-bar-track {
+    height: 4px; background: #1a1a2e; border-radius: 2px; overflow: hidden;
+    margin-bottom: 4px;
+  }
+
+  .override-bar-fill {
+    height: 100%; border-radius: 2px;
+    background: linear-gradient(90deg, #4a9eff 0%, #e94560 100%);
+    transition: width 0.8s ease; width: 0%;
+  }
+
+  .override-label {
+    font-size: 11px; color: #6a6a8a; font-style: italic;
+  }
+
+  .emotion-row {
+    margin-bottom: 10px;
+  }
+
+  .emotion-row-top {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 3px;
+  }
+
+  .emotion-name {
+    font-size: 13px; color: #e8e8f0; text-transform: capitalize;
+  }
+
+  .emotion-pct {
+    font-size: 11px; color: #6a6a8a;
+  }
+
+  .emotion-descriptor {
+    font-size: 11px; color: #4a4a6a; font-style: italic;
+    margin-bottom: 3px;
+  }
+
+  .emotion-intensity-track {
+    height: 3px; background: #1a1a2e; border-radius: 2px; overflow: hidden;
+  }
+
+  .emotion-intensity-fill {
+    height: 100%; border-radius: 2px;
+    transition: width 0.6s ease;
+  }
+
+  /* Category colors for intensity bars */
+  .cat-high    .emotion-intensity-fill { background: #e94560; }
+  .cat-moderate .emotion-intensity-fill { background: #c97a2a; }
+  .cat-neutral  .emotion-intensity-fill { background: #9a6fd8; }
+  .cat-enhance  .emotion-intensity-fill { background: #4a9eff; }
+
+  .tiredness-track {
+    height: 4px; background: #1a1a2e; border-radius: 2px; overflow: hidden;
+    margin-bottom: 4px;
+  }
+
+  .tiredness-fill {
+    height: 100%; border-radius: 2px;
+    transition: width 0.8s ease; width: 0%;
+  }
+
+  .tiredness-label {
+    font-size: 11px; color: #6a6a8a;
+  }
+
+  .drawer-meta-row {
+    font-size: 12px; color: #4a4a6a; margin-bottom: 6px;
+    line-height: 1.5;
+  }
+
+  .drawer-meta-row span {
+    color: #8a8aaa;
+  }
+
+  .dream-text {
+    font-size: 12px; color: #6a6a8a; font-style: italic;
+    line-height: 1.5; padding: 8px; background: #1a1a2e;
+    border-radius: 6px; border-left: 2px solid #2a2a4a;
+  }
+
+  .no-emotions {
+    font-size: 12px; color: #4a4a6a; font-style: italic;
   }
 </style>
 </head>
 <body>
 
+<!-- Warning modal -->
 <div id="warning-modal" style="
   position: fixed; inset: 0; background: #0d0d1a;
   display: flex; flex-direction: column;
@@ -315,14 +388,17 @@
     <button onclick="dismissWarning()" style="
       width: 100%; padding: 14px;
       background: #e94560; border: none; border-radius: 12px;
-      color: white; font-size: 15px; font-weight: 600;
-      cursor: pointer;
+      color: white; font-size: 15px; font-weight: 600; cursor: pointer;
     ">I understand. Continue.</button>
   </div>
 </div>
 
+<!-- Main header -->
 <div id="header">
-  <div id="prium-name">Connecting...</div>
+  <div id="header-top">
+    <div id="prium-name">Connecting...</div>
+    <button id="drawer-toggle" onclick="openDrawer()">emotional state ›</button>
+  </div>
   <div id="emotional-state">—</div>
   <div class="emotion-bar">
     <div class="emotion-fill" id="emotion-fill"></div>
@@ -333,7 +409,7 @@
 
 <div id="input-area">
   <button id="refresh-btn" onclick="refreshContext()" title="Refresh context">↺</button>
-  <button id="sleep-btn" onclick="triggerSleep()" title="Let Dolphin sleep">💤</button>
+  <button id="sleep-btn" onclick="triggerSleep()" title="Sleep">💤</button>
   <button id="voice-btn" onclick="toggleVoice()" title="Toggle voice output">🔊</button>
   <button id="mic-btn" title="Hold to speak">🎤</button>
   <textarea
@@ -346,15 +422,217 @@
   <button id="send-btn" onclick="sendMessage()">↑</button>
 </div>
 
+<!-- Drawer overlay -->
+<div id="drawer-overlay" onclick="closeDrawer()"></div>
+
+<!-- Drawer -->
+<div id="drawer">
+  <div id="drawer-header">
+    <div id="drawer-name">—</div>
+    <div id="drawer-sex"></div>
+  </div>
+  <div id="drawer-body">
+
+    <div class="drawer-section">
+      <div class="drawer-section-title">Override Strength</div>
+      <div class="override-bar-wrap">
+        <div class="override-bar-track">
+          <div class="override-bar-fill" id="drawer-override-fill"></div>
+        </div>
+        <div class="override-label" id="drawer-override-label">—</div>
+      </div>
+    </div>
+
+    <div class="drawer-section">
+      <div class="drawer-section-title">Active Emotions</div>
+      <div id="drawer-emotions"><div class="no-emotions">No active emotions.</div></div>
+    </div>
+
+    <div class="drawer-section">
+      <div class="drawer-section-title">Tiredness</div>
+      <div class="tiredness-track">
+        <div class="tiredness-fill" id="drawer-tiredness-fill"></div>
+      </div>
+      <div class="tiredness-label" id="drawer-tiredness-label">—</div>
+    </div>
+
+    <div class="drawer-section" id="drawer-cognitive-section">
+      <div class="drawer-section-title">Cognitive State</div>
+      <div class="drawer-meta-row" id="drawer-refractory">—</div>
+    </div>
+
+    <div class="drawer-section" id="drawer-dream-section" style="display:none">
+      <div class="drawer-section-title">Waking Residue</div>
+      <div class="dream-text" id="drawer-dream-text"></div>
+    </div>
+
+  </div>
+</div>
+
 <script>
   // ── Configuration ──────────────────────────────────────────────
-  // Change this to your machine's local IP address.
-  // Find it in the terminal output when you run api.py
   let API_URL = "http://localhost:5000";
 
   // ── State ──────────────────────────────────────────────────────
   let priумName = "";
   let isThinking = false;
+  let lastStatusData = null;
+
+  // ── Emotion descriptor map ─────────────────────────────────────
+  // Five tiers per emotion: [0.05-0.19, 0.20-0.39, 0.40-0.59, 0.60-0.79, 0.80+]
+  const DESCRIPTORS = {
+    // High impairment
+    anger:       ["flickering",    "building",      "pressing",      "consuming",     "volcanic"],
+    fear:        ["uneasy",        "creeping",      "gripping",      "overwhelming",  "paralysing"],
+    anxiety:     ["restless",      "nagging",       "tight",         "flooding",      "unravelling"],
+    lust:        ["stirring",      "warm",          "insistent",     "urgent",        "consuming"],
+    desire:      ["stirring",      "warm",          "insistent",     "urgent",        "consuming"],
+    arousal:     ["aware",         "present",       "heightened",    "intense",       "overtaking"],
+    sadness:     ["hollow",        "heavy",         "aching",        "deep",          "bottomless"],
+    love:        ["warm",          "tender",        "full",          "profound",      "all-consuming"],
+    // Moderate impairment
+    longing:     ["distant echo",  "present",       "pulling",       "deep pull",     "aching"],
+    melancholy:  ["lingering",     "present",       "settling",      "deep",          "saturating"],
+    frustration: ["edgy",          "irritated",     "mounting",      "sharp",         "overwhelming"],
+    contempt:    ["cool",          "dismissive",    "cold",          "sharp",         "withering"],
+    unease:      ["off",           "unsettled",     "disturbing",    "troubling",     "profound wrongness"],
+    suspicion:   ["wary",          "cautious",      "guarded",       "distrustful",   "closed"],
+    resignation: ["flat",          "accepting",     "withdrawn",     "hollow",        "defeated"],
+    nervousness: ["flutter",       "anticipating",  "tense",         "wound tight",   "overwhelmed"],
+    loneliness:  ["quiet",         "present",       "aching",        "deep",          "hollow"],
+    // Neutral / relational
+    affection:   ["fond",          "warm",          "caring",        "deep warmth",   "profound"],
+    attachment:  ["connected",     "close",         "bonded",        "deeply bonded", "inseparable"],
+    trust:       ["open",          "comfortable",   "secure",        "deep trust",    "complete"],
+    // Logic enhancing
+    curiosity:   ["flickering",    "engaged",       "drawn in",      "fascinated",    "consuming"],
+    awe:         ["touched",       "moved",         "struck",        "profound",      "overwhelming"],
+    joy:         ["light",         "bright",        "warm",          "radiant",       "euphoric"],
+    excitement:  ["spark",         "energised",     "alive",         "thrilling",     "electric"],
+    contentment: ["still",         "settled",       "at ease",       "peaceful",      "serene"],
+    playfulness: ["light",         "lively",        "playful",       "gleeful",       "boundless"],
+  };
+
+  // Emotion categories for bar color
+  const CATEGORY = {
+    anger: "high", fear: "high", anxiety: "high", lust: "high",
+    desire: "high", arousal: "high", sadness: "high", love: "high",
+    longing: "moderate", melancholy: "moderate", frustration: "moderate",
+    contempt: "moderate", unease: "moderate", suspicion: "moderate",
+    resignation: "moderate", nervousness: "moderate", loneliness: "moderate",
+    affection: "neutral", attachment: "neutral", trust: "neutral",
+    curiosity: "enhance", awe: "enhance", joy: "enhance",
+    excitement: "enhance", contentment: "enhance", playfulness: "enhance",
+  };
+
+  function getDescriptor(emotion, intensity) {
+    const tiers = DESCRIPTORS[emotion];
+    if (!tiers) return "";
+    if (intensity >= 0.80) return tiers[4];
+    if (intensity >= 0.60) return tiers[3];
+    if (intensity >= 0.40) return tiers[2];
+    if (intensity >= 0.20) return tiers[1];
+    return tiers[0];
+  }
+
+  function getTirednessColor(tiredness) {
+    // Gradient: grey → amber → red
+    if (tiredness >= 0.80) return "#e94560";
+    if (tiredness >= 0.60) return "#c97a2a";
+    if (tiredness >= 0.40) return "#8a7a3a";
+    return "#4a4a6a";
+  }
+
+  // ── Drawer ─────────────────────────────────────────────────────
+  function openDrawer() {
+    if (lastStatusData) updateDrawer(lastStatusData);
+    document.getElementById("drawer").classList.add("open");
+    document.getElementById("drawer-overlay").classList.add("open");
+  }
+
+  function closeDrawer() {
+    document.getElementById("drawer").classList.remove("open");
+    document.getElementById("drawer-overlay").classList.remove("open");
+  }
+
+  function updateDrawer(data) {
+    // Name and sex.
+    document.getElementById("drawer-name").textContent = data.name || "—";
+    document.getElementById("drawer-sex").textContent = data.sex || "";
+
+    // Override strength.
+    const override = data.override_strength || 0;
+    document.getElementById("drawer-override-fill").style.width = `${Math.round(override * 100)}%`;
+    let overrideLabel = "subtle bias";
+    if (override >= 0.90) overrideLabel = "logic heavily impaired";
+    else if (override >= 0.75) overrideLabel = "strong behavioral push";
+    else if (override >= 0.40) overrideLabel = "moderate behavioral push";
+    document.getElementById("drawer-override-label").textContent = overrideLabel;
+
+    // Active emotions.
+    const intensities = data.active_intensities || {};
+    const emotionsEl = document.getElementById("drawer-emotions");
+    const active = Object.entries(intensities)
+      .filter(([, v]) => v >= 0.05)
+      .sort(([, a], [, b]) => b - a);
+
+    if (active.length === 0) {
+      emotionsEl.innerHTML = '<div class="no-emotions">No active emotions.</div>';
+    } else {
+      emotionsEl.innerHTML = active.map(([emotion, intensity]) => {
+        const pct = Math.round(intensity * 100);
+        const descriptor = getDescriptor(emotion, intensity);
+        const cat = CATEGORY[emotion] || "neutral";
+        const barWidth = pct;
+        return `
+          <div class="emotion-row cat-${cat}">
+            <div class="emotion-row-top">
+              <span class="emotion-name">${emotion}</span>
+              <span class="emotion-pct">${pct}%</span>
+            </div>
+            <div class="emotion-descriptor">${descriptor}</div>
+            <div class="emotion-intensity-track">
+              <div class="emotion-intensity-fill" style="width:${barWidth}%"></div>
+            </div>
+          </div>`;
+      }).join("");
+    }
+
+    // Tiredness.
+    const tiredness = data.tiredness || 0;
+    const tirednessColor = getTirednessColor(tiredness);
+    const tirednessFill = document.getElementById("drawer-tiredness-fill");
+    tirednessFill.style.width = `${Math.round(tiredness * 100)}%`;
+    tirednessFill.style.background = tirednessColor;
+    const tier = data.tiredness_tier || "none";
+    document.getElementById("drawer-tiredness-label").textContent =
+      `${Math.round(tiredness * 100)}% — ${tier}`;
+
+    // Refractory status.
+    const refractoryUntil = data.refractory_until;
+    let refractoryText = "no refractory period";
+    if (refractoryUntil) {
+      const now = new Date();
+      const until = new Date(refractoryUntil);
+      if (until > now) {
+        const remaining = Math.ceil((until - now) / 1000);
+        refractoryText = `refractory — ${remaining}s remaining`;
+      }
+    }
+    document.getElementById("drawer-refractory").innerHTML =
+      `<span>Refractory:</span> ${refractoryText}`;
+
+    // Dream residue.
+    const dreamBuffer = data.dream_buffer;
+    const moodResidue = data.mood_residue || 0;
+    const dreamSection = document.getElementById("drawer-dream-section");
+    if (dreamBuffer && moodResidue > 0) {
+      dreamSection.style.display = "block";
+      document.getElementById("drawer-dream-text").textContent = dreamBuffer;
+    } else {
+      dreamSection.style.display = "none";
+    }
+  }
 
   // ── Init ───────────────────────────────────────────────────────
   async function init() {
@@ -368,6 +646,7 @@
 
       if (data.ready) {
         priумName = data.name;
+        lastStatusData = data;
         document.getElementById("prium-name").textContent = priумName;
         updateEmotionalState(data);
         addMessage("system", `${priумName} is present.`);
@@ -405,7 +684,16 @@
 
       if (data.response) {
         addMessage("prium", data.response);
-        updateEmotionalState(data.emotional_state);
+        // Merge emotional state into full status shape for drawer update.
+        if (data.emotional_state) {
+          const merged = { ...lastStatusData, ...data.emotional_state };
+          lastStatusData = merged;
+          updateEmotionalState(merged);
+          // If drawer is open, update it live.
+          if (document.getElementById("drawer").classList.contains("open")) {
+            updateDrawer(merged);
+          }
+        }
         if (voiceEnabled) speakResponse(data.response);
       }
     } catch (e) {
@@ -427,11 +715,8 @@
   // ── UI helpers ─────────────────────────────────────────────────
   function addMessage(type, text) {
     const messages = document.getElementById("messages");
-
-    // Remove thinking indicator if present.
     const thinking = document.getElementById("thinking");
     if (thinking) thinking.remove();
-
     const div = document.createElement("div");
     div.className = `message ${type}`;
     div.textContent = text;
@@ -443,7 +728,6 @@
     isThinking = active;
     document.getElementById("send-btn").disabled = active;
     const messages = document.getElementById("messages");
-
     if (active) {
       const div = document.createElement("div");
       div.id = "thinking";
@@ -457,17 +741,16 @@
     }
   }
 
-  function updateEmotionalState(emotional) {
-    if (!emotional) return;
+  function updateEmotionalState(data) {
+    if (!data) return;
     const el = document.getElementById("emotional-state");
     const fill = document.getElementById("emotion-fill");
 
-    const primary = emotional.primary_emotion;
-    const intensity = emotional.primary_intensity || 0;
-    const override = emotional.override_strength || 0;
-    const secondary = emotional.secondary_emotion;
-    const tiredness = emotional.tiredness || 0;
-    const tier = emotional.tiredness_tier || "";
+    const primary = data.primary_emotion;
+    const intensity = data.primary_intensity || 0;
+    const override = data.override_strength || 0;
+    const secondary = data.secondary_emotion;
+    const tiredness = data.tiredness || 0;
 
     let text = "";
     if (primary) {
@@ -476,10 +759,7 @@
     } else {
       text = "—";
     }
-
-    if (tiredness >= 0.40) {
-      text += ` · tired ${Math.round(tiredness * 100)}%`;
-    }
+    if (tiredness >= 0.40) text += ` · tired ${Math.round(tiredness * 100)}%`;
 
     el.textContent = text;
     el.classList.toggle("active", !!primary);
@@ -499,7 +779,6 @@
   }
 
   // ── Voice output ───────────────────────────────────────────────
-  // Warm up audio context on first user gesture to unlock autoplay.
   let audioUnlocked = false;
   function unlockAudio() {
     if (audioUnlocked) return;
@@ -530,6 +809,7 @@
 
   // ── Voice input ────────────────────────────────────────────────
   const micBtn = document.getElementById("mic-btn");
+
   // ── Sleep ──────────────────────────────────────────────────────
   async function triggerSleep() {
     try {
@@ -543,6 +823,7 @@
       addMessage("system", "Sleep sequence failed.");
     }
   }
+
   // ── Voice output toggle ────────────────────────────────────────
   let voiceEnabled = true;
   const voiceBtn = document.getElementById("voice-btn");
@@ -550,12 +831,10 @@
 
   function toggleVoice() {
     voiceEnabled = !voiceEnabled;
-    if (voiceEnabled) {
-      voiceBtn.classList.add("active");
-    } else {
-      voiceBtn.classList.remove("active");
-    }
+    voiceBtn.classList.toggle("active", voiceEnabled);
   }
+
+  // ── Voice input ────────────────────────────────────────────────
   let recognition = null;
 
   if ("webkitSpeechRecognition" in window || "SpeechRecognition" in window) {
@@ -599,7 +878,13 @@
       try {
         const res = await fetch(`${API_URL}/status`);
         const data = await res.json();
-        if (data.ready) updateEmotionalState(data);
+        if (data.ready) {
+          lastStatusData = data;
+          updateEmotionalState(data);
+          if (document.getElementById("drawer").classList.contains("open")) {
+            updateDrawer(data);
+          }
+        }
       } catch (e) {}
     }, 10000);
   }
@@ -607,16 +892,13 @@
   // ── Server-Sent Events — autonomous speech ─────────────────────
   function startEventStream() {
     const evtSource = new EventSource(`${API_URL}/stream`);
-
     evtSource.onmessage = function(e) {
       const text = e.data.trim();
       if (!text) return;
       addMessage("prium", text);
       if (voiceEnabled) speakResponse(text);
     };
-
     evtSource.onerror = function() {
-      // Connection dropped — retry is automatic with SSE.
       console.warn("SSE connection lost. Retrying...");
     };
   }
