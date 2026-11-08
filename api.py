@@ -27,6 +27,7 @@ from context import assemble, build_system_prompt, create_buffer, add_to_buffer,
 from adapters.ollama import OllamaAdapter
 from demiurge import startup, shutdown, sleep_sequence, SOUL_FILE_PATH, MODEL_NAME, OLLAMA_HOST
 from voice import speak_to_bytes
+from observe_log import log_turn
 
 app = Flask(__name__)
 
@@ -461,6 +462,7 @@ def chat():
             session_hours=session_hours,
         )
         soul["sleep_state"]["tiredness"] = state["tiredness"]
+        log_turn(soul, state["emotional_state"], state["tiredness"], emotion_triggers, gen_params, user_input, response)
 
         # Check tiredness tier and handle expression.
         tiredness_tier = get_tiredness_tier(state["tiredness"])
