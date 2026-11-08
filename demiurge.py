@@ -38,6 +38,7 @@ from memory_filter.retrieval import select_memories
 from context import assemble, build_system_prompt, create_buffer, add_to_buffer, _extract_sensory_cues, _extract_topic_cues
 from adapters.ollama import OllamaAdapter
 from voice import speak, listen
+from observe_log import log_turn
 
 # ─── CONFIGURATION ────────────────────────────────────────────────────────────
 
@@ -986,6 +987,7 @@ if __name__ == "__main__":
                 session_hours=session_hours,
             )
 
+            log_turn(soul, emotional_state, tiredness, emotion_triggers, gen_params, user_input, response)
             # Update tiredness in soul file.
             soul["sleep_state"]["tiredness"] = tiredness
 

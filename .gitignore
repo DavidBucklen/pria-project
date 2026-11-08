@@ -235,3 +235,6 @@ test_voices.py
 # Private files - never commit
 private_physiology.py
 primal_drive.py
+
+# Observation log — contains conversation text
+observe_log.jsonl
