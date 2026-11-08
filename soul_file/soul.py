@@ -215,6 +215,7 @@ def write_memory(
     sensory_tags: list = None,
     topic_tags: list = None,
     immediate: bool = False,
+    salience: float = 0.0,
 ):
     """
     Writes a memory that passed the filter threshold to long-term storage.
@@ -228,7 +229,7 @@ def write_memory(
     soul["long_term_memories"].append({
         "description": description,
         "importance": round(score, 3),
-        "sharpness": round(max(0.0, min(1.0, sharpness)), 3),
+        "sharpness": round(max(0.0, min(1.0, max(sharpness, salience))), 3),
         "emotional_context": emotional_context or {
             "primary_emotion": None,
             "secondary_emotion": None,

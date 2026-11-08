@@ -13,6 +13,10 @@ ANCHOR_THRESHOLD = 0.92
 # Tunable — initial value to be calibrated during testing.
 RESONANCE_THRESHOLD = 0.15
 
+# Salience gain: resonance scores are multiplied by 1 + salience * this value.
+# At full salience, scores rise by 50%. Bounded, so salience cannot flood context.
+SALIENCE_GAIN_MAX = 0.5
+
 # Weights for each resonance signal.
 RESONANCE_WEIGHTS = {
     "emotional_match":   0.30,
@@ -127,6 +131,7 @@ def select_memories(soul: dict, context: dict) -> list:
     Guarantees at least 3 recent memories are always surfaced.
     """
     MINIMUM_RECENT_MEMORIES = 3
+    salience_gain = 1.0 + (context.get("salience", 0.0) * SALIENCE_GAIN_MAX)
 
     memories = soul.get("long_term_memories", [])
     anchors = []
@@ -140,6 +145,7 @@ def select_memories(soul: dict, context: dict) -> list:
             anchor_descriptions.add(memory.get("description", ""))
         else:
             resonance = score_resonance(memory, context)
+            resonance = min(1.0, resonance * salience_gain)
             if resonance >= RESONANCE_THRESHOLD:
                 candidates.append({**memory, "resonance_score": resonance, "anchor": False})
 
@@ -205,3 +211,25 @@ def apply_sharpness(memory: dict) -> str:
         return f"I remember, though not perfectly — {description}"
     else:
         return f"There is something, vague now — {description}"
+
+    
+
+# ─── RESONANCE SUMMARY ────────────────────────────────────────────────────────
+
+def summarize_resonance(selected: list) -> float:
+    """
+    Reduces a list of selected memories to one memory-resonance value
+    for the emotional engine. Anchors (always 1.0) and filler memories
+    (resonance 0.0) are excluded, since neither reflects real association.
+    Returns the average of the mean and the max of the remainder,
+    or 0.0 if nothing resonated.
+    """
+    scores = [
+        m["resonance_score"]
+        for m in selected
+        if not m.get("anchor") and m.get("resonance_score", 0.0) > 0.0
+    ]
+    if not scores:
+        return 0.0
+    mean = sum(scores) / len(scores)
+    return round((mean + max(scores)) / 2, 3)

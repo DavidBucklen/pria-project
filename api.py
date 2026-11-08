@@ -18,6 +18,7 @@ from emotional_engine.engine import (
     empty_state, trigger, decay, state_to_snapshot, load_from_snapshot,
     accumulate_tiredness, get_tiredness_tier, decay_tiredness,
     apply_baseline_modifiers,
+    apply_appraisal,
 )
 from emotional_engine.evaluator import evaluate_exchange, detect_people, inner_monologue
 from emotional_engine.modulation import get_generation_params
@@ -347,7 +348,7 @@ def chat():
                             },
                             sensory_tags=event.get("sensory_tags", []),
                             topic_tags=event.get("topic_tags", []),
-                            immediate=result["immediate_write"],
+                            immediate=result["immediate_write"], salience=event.get("salience", 0.0),
                         )
             state["buffer"] = create_buffer()
             state["session_events"] = []
@@ -419,6 +420,7 @@ def chat():
             )
 
 
+        state["emotional_state"] = apply_appraisal(state["emotional_state"], emotion_triggers)
         # Detect people mentioned.
         detected_people = detect_people(
             adapter=adapter,
@@ -487,6 +489,7 @@ def chat():
             "first_occurrence": len(state["session_events"]) == 1,
             "relationship_change": False,
             "emotional_intensity": override,
+            "salience": state["emotional_state"].get("salience", 0.0),
             "threshold_crossing": override >= 0.75,
             "sensory_tags": list(set(sensory_tags)),
             "topic_tags": list(set(topic_tags)),
@@ -538,7 +541,7 @@ def refresh():
                         },
                         sensory_tags=event.get("sensory_tags", []),
                         topic_tags=event.get("topic_tags", []),
-                        immediate=result["immediate_write"],
+                        immediate=result["immediate_write"], salience=event.get("salience", 0.0),
                     )
 
         # Save emotional state.

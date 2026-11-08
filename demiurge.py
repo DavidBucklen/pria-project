@@ -29,6 +29,7 @@ from emotional_engine.engine import (
     get_tiredness_tier,
     decay_tiredness,
     apply_baseline_modifiers,
+    apply_appraisal,
 )
 from emotional_engine.evaluator import evaluate_exchange, detect_people, inner_monologue
 from emotional_engine.modulation import get_generation_params
@@ -473,7 +474,7 @@ def refresh_context(soul: dict, emotional_state: dict, buffer: list, session_eve
                     },
                     sensory_tags=event.get("sensory_tags", []),
                     topic_tags=event.get("topic_tags", []),
-                    immediate=result["immediate_write"],
+                    immediate=result["immediate_write"], salience=event.get("salience", 0.0),
                 )
 
     # Save emotional state to soul file.
@@ -602,7 +603,7 @@ def sleep_sequence(soul: dict, emotional_state: dict, adapter, buffer: list, ses
                     },
                     sensory_tags=event.get("sensory_tags", []),
                     topic_tags=event.get("topic_tags", []),
-                    immediate=result["immediate_write"],
+                    immediate=result["immediate_write"], salience=event.get("salience", 0.0),
                 )
 
     # Prune low importance memories below decay threshold.
@@ -766,7 +767,7 @@ def shutdown(soul: dict, emotional_state: dict, buffer: list, session_events: li
                     },
                     sensory_tags=event.get("sensory_tags", []),
                     topic_tags=event.get("topic_tags", []),
-                    immediate=result["immediate_write"],
+                    immediate=result["immediate_write"], salience=event.get("salience", 0.0),
                 )
 
     # Save emotional state to soul file.
@@ -962,6 +963,7 @@ if __name__ == "__main__":
             for emotion, intensity in emotion_triggers:
                 intensity = apply_baseline_modifiers(emotion, intensity, soul)
                 emotional_state = trigger(emotional_state, emotion, intensity)
+            emotional_state = apply_appraisal(emotional_state, emotion_triggers)    
 
 
             if DEBUG_MODE:
@@ -1028,6 +1030,7 @@ if __name__ == "__main__":
                 "first_occurrence": len(session_events) == 1,
                 "relationship_change": False,
                 "emotional_intensity": override,
+                "salience": emotional_state.get("salience", 0.0),
                 "threshold_crossing": override >= 0.75,
                 "sensory_tags": list(set(sensory_tags)),
                 "topic_tags": list(set(topic_tags)),

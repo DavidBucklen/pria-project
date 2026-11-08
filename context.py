@@ -5,7 +5,7 @@
 # and short-term buffer to build the Prium's lived context.
 
 from datetime import datetime, timezone
-from memory_filter.retrieval import select_memories, record_retrieval, apply_sharpness
+from memory_filter.retrieval import select_memories, record_retrieval, apply_sharpness, summarize_resonance
 
 # ─── CONFIGURATION ────────────────────────────────────────────────────────────
 
@@ -110,10 +110,12 @@ def assemble(
         "sensory_cues": _extract_sensory_cues(current_input),
         "topic_cues": _extract_topic_cues(current_input),
         "current_time": now,
+        "salience": emotional_state.get("salience", 0.0),
     }
 
     # Select memories associatively.
     selected_memories = select_memories(soul, retrieval_context)
+    emotional_state["memory_resonance"] = summarize_resonance(selected_memories)
 
     # Record retrieval for each surfaced memory.
     for memory in selected_memories:

@@ -84,11 +84,14 @@ def empty_state() -> dict:
         "secondary_emotion": None,
         "secondary_intensity": 0.0,
         "override_strength": 0.0,
+        "salience": 0.0,
+        "valence": 0.0,
+        "memory_resonance": 0.0,
         "last_updated": datetime.now(timezone.utc).isoformat(),
     }
 
 
-# ─── CORE OPERATIONS ──────────────────────────────────────────────────────────
+# ─── CORE OPERATIONS
 
 def trigger(state: dict, emotion: str, intensity: float) -> dict:
     """
@@ -124,10 +127,28 @@ def apply_baseline_modifiers(emotion: str, intensity: float, soul: dict) -> floa
     return round(min(0.2, intensity * multiplier), 3)
 
 
+# Salience falls by a fixed amount per cycle.
+SALIENCE_DECAY = 0.08
+
+# Valence is multiplied by this each cycle, drifting toward neutral.
+VALENCE_DECAY_FACTOR = 0.90
+
+# Memory resonance fades faster than salience (feedback-lock defense).
+RESONANCE_DECAY = 0.15
+
+# Memory resonance feeds back into salience through this gain, capped.
+# FEEDBACK_CAP must stay below SALIENCE_DECAY, so feedback alone can
+# never hold salience up. It only slows the fall.
+FEEDBACK_GAIN = 0.15
+FEEDBACK_CAP = 0.05
+
+
 def decay(state: dict) -> dict:
     """
-    Applies one decay cycle to all emotion intensities.
+    Applies one decay cycle to all emotion intensities, salience,
+    valence, and memory resonance.
     Each emotion decays at its own rate toward zero.
+    Memory resonance adds a small capped bump to salience before it fades.
     Returns updated state.
     """
     for emotion in EMOTIONS:
@@ -136,11 +157,90 @@ def decay(state: dict) -> dict:
             rate = DECAY_RATES.get(emotion, 0.05)
             state["intensities"][emotion] = max(0.0, current - rate)
 
+    # Older states may lack the appraisal fields.
+    state.setdefault("salience", 0.0)
+    state.setdefault("valence", 0.0)
+    state.setdefault("memory_resonance", 0.0)
+
+    # Salience falls, then memory resonance gives it a small capped lift.
+    salience = max(0.0, state["salience"] - SALIENCE_DECAY)
+    bump = min(FEEDBACK_CAP, state["memory_resonance"] * FEEDBACK_GAIN)
+    state["salience"] = round(min(SALIENCE_CEILING, salience + bump), 3)
+
+    # Valence drifts toward neutral. Resonance fades faster than both.
+    state["valence"] = round(state["valence"] * VALENCE_DECAY_FACTOR, 3)
+    state["memory_resonance"] = round(
+        max(0.0, state["memory_resonance"] - RESONANCE_DECAY), 3
+    )
+
     state = _recalculate(state)
     return state
 
 
-# ─── INTERNAL CALCULATIONS ────────────────────────────────────────────────────
+# ─── APPRAISAL: SALIENCE AND VALENCE ──────────────────────────────────────────
+
+# Fixed polarity per emotion: -1.0 (aversive) to +1.0 (appetitive).
+# Initial estimates. Tune from observed behavior, not from theory.
+EMOTION_POLARITY = {
+    "joy": 1.0, "excitement": 0.6, "anger": -0.8, "fear": -0.9,
+    "anxiety": -0.7, "contentment": 0.7, "sadness": -0.8,
+    "melancholy": -0.5, "longing": -0.3, "resignation": -0.5,
+    "affection": 0.8, "attachment": 0.6, "loneliness": -0.7,
+    "love": 1.0, "trust": 0.7, "suspicion": -0.5, "desire": 0.4,
+    "arousal": 0.3, "lust": 0.3, "curiosity": 0.5, "frustration": -0.6,
+    "contempt": -0.7, "awe": 0.6, "unease": -0.6, "playfulness": 0.8,
+    "nervousness": -0.4,
+}
+
+# Hard ceiling on salience. Part of the feedback-lock defense.
+SALIENCE_CEILING = 0.95
+
+# Summed trigger intensity that counts as fully salient (two max triggers).
+SALIENCE_FULL_SCALE = 0.4
+
+# How far salience moves toward a new reading per exchange (0 to 1).
+SALIENCE_RISE_RATE = 0.5
+
+# How far valence moves toward the exchange's valence per exchange (0 to 1).
+VALENCE_BLEND = 0.5
+
+
+def apply_appraisal(state: dict, triggers: list) -> dict:
+    """
+    Updates salience and valence from this exchange's emotion triggers.
+    triggers is the evaluator's list of (emotion, intensity) tuples.
+
+    Salience rises toward the exchange's total trigger intensity and never
+    drops here (decay handles falling). Valence is the intensity-weighted
+    mean polarity of the triggers, blended into the existing valence.
+    No triggers means no change. Deterministic, no model call.
+    """
+    state.setdefault("salience", 0.0)
+    state.setdefault("valence", 0.0)
+    state.setdefault("memory_resonance", 0.0)
+
+    total = sum(i for _, i in triggers)
+    if total <= 0.0:
+        return state
+
+    # Salience: rise toward this exchange's reading, capped.
+    reading = min(1.0, total / SALIENCE_FULL_SCALE)
+    if reading > state["salience"]:
+        state["salience"] += (reading - state["salience"]) * SALIENCE_RISE_RATE
+    state["salience"] = round(min(SALIENCE_CEILING, state["salience"]), 3)
+
+    # Valence: intensity-weighted mean polarity, blended in.
+    weighted = sum(EMOTION_POLARITY.get(e, 0.0) * i for e, i in triggers)
+    exchange_valence = weighted / total
+    state["valence"] = round(
+        (state["valence"] * (1.0 - VALENCE_BLEND))
+        + (exchange_valence * VALENCE_BLEND),
+        3,
+    )
+    return state
+
+
+# ─── INTERNAL CALCULATIONS
 
 def _recalculate(state: dict) -> dict:
     """
@@ -216,7 +316,9 @@ def state_to_snapshot(state: dict) -> dict:
         "primary_intensity": state["primary_intensity"],
         "secondary_emotion": state["secondary_emotion"],
         "secondary_intensity": state["secondary_intensity"],
-        "override_strength": state["override_strength"],
+                "override_strength": state["override_strength"],
+        "salience": state.get("salience", 0.0),
+        "valence": state.get("valence", 0.0),
         "active_intensities": active,
     }
 
@@ -231,6 +333,10 @@ def load_from_snapshot(snapshot: dict) -> dict:
     for emotion, intensity in snapshot.get("active_intensities", {}).items():
         if emotion in EMOTIONS:
             state["intensities"][emotion] = intensity
+
+    # Old snapshots lack these fields; default to zero.
+    state["salience"] = snapshot.get("salience", 0.0)
+    state["valence"] = snapshot.get("valence", 0.0)
 
     state = _recalculate(state)
     return state
